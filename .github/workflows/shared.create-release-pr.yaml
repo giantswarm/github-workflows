@@ -1,34 +1,17 @@
-# DO NOT EDIT. Generated with:
-#
-#    devctl
-#
-#    https://github.com/giantswarm/devctl/blob/771e68c7deeda0e8cbd4af23d718a34e708822e4/pkg/gen/input/workflows/internal/file/create_release_pr.yaml.template
-#
 name: Create Release PR
+
 on:
-  push:
-    branches:
-      - 'legacy#release#v*.*.*'
-      - 'main#release#v*.*.*'
-      - 'main#release#major'
-      - 'main#release#minor'
-      - 'main#release#patch'
-      - 'master#release#v*.*.*'
-      - 'master#release#major'
-      - 'master#release#minor'
-      - 'master#release#patch'
-      - 'release#v*.*.*'
-      - 'release#major'
-      - 'release#minor'
-      - 'release#patch'
-      - 'release-v*.*.x#release#v*.*.*'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x#release#v*.*.*'
   workflow_call:
     inputs:
       branch:
+        description: "Branch (full ref) to use for this PR"
         required: true
         type: string
+    secrets:
+      TAYLORBOT_GITHUB_ACTION:
+        description: "Token to create the pull request"
+        required: true
+
 jobs:
   debug_info:
     name: Debug info
@@ -43,12 +26,12 @@ jobs:
     name: Gather facts
     runs-on: ubuntu-22.04
     outputs:
-      repo_name: ${{ steps.gather_facts.outputs.repo_name }}
-      branch: ${{ steps.gather_facts.outputs.branch }}
-      base: ${{ steps.gather_facts.outputs.base }}
+      repo_name:        ${{ steps.gather_facts.outputs.repo_name }}
+      branch:           ${{ steps.gather_facts.outputs.branch }}
+      base:             ${{ steps.gather_facts.outputs.base }}
       needs_major_bump: ${{ steps.gather_facts.outputs.needs_major_bump }}
-      skip: ${{ steps.pr_exists.outputs.skip }}
-      version: ${{ steps.gather_facts.outputs.version }}
+      skip:             ${{ steps.pr_exists.outputs.skip }}
+      version:          ${{ steps.gather_facts.outputs.version }}
     steps:
       - name: Gather facts
         id: gather_facts
@@ -123,6 +106,7 @@ jobs:
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
           echo "version=${version}" >> $GITHUB_OUTPUT
+
       - name: Check if PR exists
         id: pr_exists
         env:
@@ -136,6 +120,7 @@ jobs:
           else
             echo "skip=false" >> $GITHUB_OUTPUT
           fi
+
   prepare_release_pr:
     name: Prepare release PR for Backstage project
     runs-on: ubuntu-22.04

@@ -1,19 +1,12 @@
-# DO NOT EDIT. Generated with:
-#
-#    devctl
-#
-#    https://github.com/giantswarm/devctl/blob/9fedf13cca653e8c1828fdc57294c06273e427d6/pkg/gen/input/workflows/internal/file/create_release.yaml.template
-#
 name: Create Release
+
 on:
-  push:
-    branches:
-      - 'legacy'
-      - 'main'
-      - 'master'
-      - 'release-v*.*.x'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x'
+  workflow_call:
+    secrets:
+      TAYLORBOT_GITHUB_ACTION:
+        description: "Token to create the pull request"
+        required: true
+
 jobs:
   debug_info:
     name: Debug info
@@ -24,13 +17,14 @@ jobs:
           cat <<EOF
           ${{ toJson(github) }}
           EOF
+
   gather_facts:
     name: Gather facts
     runs-on: ubuntu-22.04
     outputs:
       project_go_path: ${{ steps.get_project_go_path.outputs.path }}
-      ref_version: ${{ steps.ref_version.outputs.refversion }}
-      version: ${{ steps.get_version.outputs.version }}
+      ref_version:     ${{ steps.ref_version.outputs.refversion }}
+      version:         ${{ steps.get_version.outputs.version }}
     steps:
       - name: Get version
         id: get_version
