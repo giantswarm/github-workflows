@@ -1,0 +1,249 @@
+name: Create Release
+
+on:
+  workflow_call: {}
+
+jobs:
+  debug_info:
+    name: Debug info
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Print github context JSON
+        run: |
+          cat <<EOF
+          ${{ toJson(github) }}
+          EOF
+
+  gather_facts:
+    name: Gather facts
+    runs-on: ubuntu-22.04
+    outputs:
+      project_go_path: ${{ steps.get_project_go_path.outputs.path }}
+      ref_version:     ${{ steps.ref_version.outputs.refversion }}
+      version:         ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Get version
+        id: get_version
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
+          if echo "${title}" | grep -iqE '^Release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+            version=$(echo "${title}" | cut -d ' ' -f 2)
+          fi
+          version="${version#v}"
+          echo "version=${version}" >> $GITHUB_OUTPUT
+
+      - name: Checkout code
+        if: ${{ steps.get_version.outputs.version != '' }}
+        uses: actions/checkout@v4.2.2
+
+      - name: Get project.go path
+        id: get_project_go_path
+        if: ${{ steps.get_version.outputs.version != '' }}
+        run: |
+          path='./pkg/project/project.go'
+          [[ -f $path ]] || path=''
+          echo "path=${path}" >> $GITHUB_OUTPUT
+
+      - name: Check if reference version
+        id: ref_version
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
+          version=$(echo "${title}" | cut -d ' ' -f 2)
+          version="${version#v}"
+          refversion=false
+          if [[ "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]]; then
+            refversion=true
+          fi
+          echo "refversion=${refversion}" >> $GITHUB_OUTPUT
+
+  update_project_go:
+    name: Update project.go
+    runs-on: ubuntu-22.04
+    needs: gather_facts
+    if:  ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
+    steps:
+      - name: Install architect
+        uses: giantswarm/install-binary-action@v3.0.0
+        with:
+          binary: "architect"
+          version: "6.14.1"
+
+      - name: Install semver
+        uses: giantswarm/install-binary-action@v3.0.0
+        with:
+          binary: "semver"
+          version: "3.2.0"
+          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
+          tarball_binary_path: "*/src/${binary}"
+          smoke_test: "${binary} --version"
+
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+
+      - name: Update project.go
+        id: update_project_go
+        env:
+          branch: "${{ github.ref }}-version-bump"
+        run: |
+          git checkout -b ${{ env.branch }}
+          file="${{ needs.gather_facts.outputs.project_go_path }}"
+          version="${{ needs.gather_facts.outputs.version }}"
+          new_version="$(semver bump patch $version)-dev"
+          echo "new_version=${new_version}" >> $GITHUB_OUTPUT
+          sed -Ei "s/(version[[:space:]]*=[[:space:]]*)\"${version}\"/\1\"${new_version}\"/" $file
+          [[ $(git diff --exit-code $file) ]] || { echo "error: no changes" >&2; exit 1; }
+
+      - name: Set up git identity
+        run: |
+          git config --local user.email "dev@giantswarm.io"
+          git config --local user.name  "taylorbot"
+
+      - name: Commit & push
+        env:
+          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+        run: |
+          git add "${{ needs.gather_facts.outputs.project_go_path }}"
+          git commit -m "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
+          git push "${REMOTE_REPO}" HEAD:${{ github.ref }}-version-bump
+
+      - name: Create PR & enable auto-merge
+        env:
+          GITHUB_TOKEN:           ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          base:                   ${{ github.ref }}
+          branch:                 ${{ github.ref }}-version-bump
+          title:                  "Bump version to ${{ steps.update_project_go.outputs.new_version }}"
+        run: |
+          gh pr create --title "${{ env.title }}" --base ${{ env.base }} --head ${{ env.branch }} --reviewer ${{ github.actor }}
+          gh pr merge --auto --squash "${{ env.branch }}" || echo "::warning::Auto-merge not allowed."
+
+  create_release:
+    name: Create release
+    runs-on: ubuntu-22.04
+    needs: gather_facts
+    if:   ${{ needs.gather_facts.outputs.version != '' }}
+    outputs:
+      upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Ensure version in project.go
+        if: ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
+        run: |
+          grep -qE "version[[:space:]]*=[[:space:]]*\"${{ needs.gather_facts.outputs.version }}\"" "${{ needs.gather_facts.outputs.project_go_path }}"
+
+      - name: Get Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2.2.3
+        with:
+          version: ${{ needs.gather_facts.outputs.version }}
+          path:    ./CHANGELOG.md
+
+      - name: Set up git identity
+        run: |
+          git config --local user.email "dev@giantswarm.io"
+          git config --local user.name  "taylorbot"
+
+      - name: Create tag & push
+        env:
+          REMOTE_REPO: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+        run: |
+          git tag "v${{ needs.gather_facts.outputs.version }}" ${{ github.sha }}
+          git push "${REMOTE_REPO}" --tags
+
+      - name: Create GitHub release
+        id: create_gh_release
+        uses: ncipollo/release-action@v1.16.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+        with:
+          tag:  "v${{ needs.gather_facts.outputs.version }}"
+          body: ${{ steps.changelog_reader.outputs.changes }}
+
+  create-release-branch:
+    name: Create release branch
+    runs-on: ubuntu-22.04
+    needs: gather_facts
+    if:   ${{ needs.gather_facts.outputs.version != '' }}
+    steps:
+      - name: Install semver
+        uses: giantswarm/install-binary-action@v3.0.0
+        with:
+          binary: "semver"
+          version: "3.0.0"
+          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
+          tarball_binary_path: "*/src/${binary}"
+          smoke_test: "${binary} --version"
+
+      - name: Fetch history & branch
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Determine and push branch
+        run: |
+          git fetch --all
+          current="${{ needs.gather_facts.outputs.version }}"
+          parent=$(git describe --tags --abbrev=0 HEAD^ || true)
+          parent="${parent#v}"
+          if [[ -z "$parent" ]]; then exit 0; fi
+          maj1=$(semver get major $current); min1=$(semver get minor $current)
+          maj2=$(semver get major $parent);  min2=$(semver get minor $parent)
+          if (( maj1>maj2 || (maj1==maj2 && min1>min2) )); then
+            branch="release-v${maj2}.${min2}.x"
+            git branch $branch HEAD^ && git push origin $branch
+          fi
+
+  create_and_upload_build_artifacts:
+    name: Create and upload build artifacts
+    runs-on: ubuntu-22.04
+    needs:
+      - create_release
+      - gather_facts
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - darwin-amd64
+          - linux-amd64
+          - darwin-arm64
+          - linux-arm64
+          - windows-amd64
+    env:
+      GO_VERSION:                         1.21.3
+      ARTIFACT_DIR:                       bin-dist
+      TAG:                                v${{ needs.gather_facts.outputs.version }}
+      CODE_SIGNING_CERT_BUNDLE_BASE64:    ${{ secrets.CODE_SIGNING_CERT_BUNDLE_BASE64 }}
+      CODE_SIGNING_CERT_BUNDLE_PASSWORD:  ${{ secrets.CODE_SIGNING_CERT_BUNDLE_PASSWORD }}
+    steps:
+      - name: Install architect
+        uses: giantswarm/install-binary-action@v3.0.0
+        with:
+          binary: "architect"
+          version: "6.14.1"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Checkout at tag
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Fetch main branch
+        run: git fetch origin main --unshallow
+
+      - name: Build & upload artifacts
+        run: |
+          make package-${{ matrix.platform }}
+          fname="${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}"
+          [[ "${{ matrix.platform }}" == "windows-amd64" ]] && fname+=".zip" || fname+=".tar.gz"
+          gh release upload ${{ env.TAG }} ${{ env.ARTIFACT_DIR }}/${fname}#${fname}
