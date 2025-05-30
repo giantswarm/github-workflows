@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/*.yaml'
-      - '.github/workflows/*.yml'
+  workflow_dispatch: {}
+  workflow_call: {}
 
 jobs:
   validate:
@@ -17,3 +18,4 @@ jobs:
         uses: jazzsequence/github-action-validator@843ac61ce962184aa316e582398e99c744e4215f # v1.0.0
         with:
           show-ascii-art: false
+          path-to-workflows: '.github/workflows/*.yaml'
