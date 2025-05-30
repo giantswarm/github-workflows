@@ -1,3 +1,3 @@
-# Github Workflows
+# GitHub workflows
 
-Set of Github Workflows to use on GiantSwarm repositories.
+A repository of reusable workflows, intended for use in the `giantswrm` organization.
