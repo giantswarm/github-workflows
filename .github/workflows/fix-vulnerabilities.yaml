@@ -21,45 +21,54 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       branch: ${{ steps.gather_facts.outputs.branch }}
-      skip:   ${{ steps.gather_facts.outputs.skip }}
+      skip : ${{ steps.gather_facts.outputs.skip }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.branch }}
+          ref: ${{ inputs.branch || github.ref }}
       - name: Gather facts
         id: gather_facts
         run: |
-          head="${{ inputs.branch }}"
+          head="${{ inputs.branch || github.ref }}"
           branch="${{ github.ref_name }}"
+
           echo "branch=${branch}" >> $GITHUB_OUTPUT
-          head="${head#refs/heads/}"
-          echo "head=${head}"   >> $GITHUB_OUTPUT
-          if [[ ! -e go.mod && ! -e go.sum ]]; then
-            echo "skip=true"    >> $GITHUB_OUTPUT
+
+          head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
+          echo "head=${head}" >> $GITHUB_OUTPUT
+
+          # Skip if there are no go mod files
+          if [[ ! -e go.mod ]] && [[ ! -e go.sum ]]; then
+            skip=true
+            echo "There are no go mod files in the repo, skipping"
           else
-            echo "skip=false"   >> $GITHUB_OUTPUT
+            skip=false
           fi
+
+          echo "skip=${skip}" >> $GITHUB_OUTPUT
+          echo "head=\"$head\" branch=\"$branch\" skip=\"$skip\""
 
   run_nancy_fixer:
     name: Fix vulnerabilities with nancy-fixer
     runs-on: ubuntu-22.04
-    needs: gather_facts
+    needs:
+      - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
     steps:
       - name: Generate a token
         id: generate_token
-        uses: actions/create-github-app-token@v2.0.2
+        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2.0.6
         with:
-          app-id:      ${{ secrets.HERALD_APP_ID }}
+          app-id: ${{ secrets.HERALD_APP_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
 
-      - name: Checkout code with token
-        uses: actions/checkout@v4.2.2
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          token:                 ${{ steps.generate_token.outputs.token }}
-          persist-credentials:   false
-          ref:                   ${{ needs.gather_facts.outputs.branch }}
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
+          ref: ${{ needs.gather_facts.outputs.branch }}
 
       - name: Create new branch
         id: create_branch
@@ -70,31 +79,42 @@ jobs:
           git pull origin "${branch}" || true
 
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.4.4
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.1
         timeout-minutes: 20
-
-      - name: Commit & push
+      
+      - name: Set up git identity
         run: |
-          git config user.email  "149080493+heraldbot[bot]@users.noreply.github.com"
-          git config user.name   "HeraldBot[bot]"
+          git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
+          git config --local user.name "HeraldBot[bot]"
+
+      - name: Commit new files
+        id: commit_changes
+        run: |
           git add -A
           if git diff-index --quiet HEAD; then
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No changes found"
+            skip=true
           else
             git commit -m "Remediate Nancy findings"
-            echo "skip=false" >> $GITHUB_OUTPUT
-            git push "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git" \
-                     HEAD:"${{ steps.create_branch.outputs.branch }}"
+            skip=false
           fi
+          echo "skip=${skip}" >> $GITHUB_OUTPUT
 
-      - name: Create PR
-        if: ${{ steps.commit_changes.outputs.skip != 'true' }}
+      - name: Push changes
+        if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         env:
-          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
+        run: |
+          git push "${remote_repo}" HEAD:"${{ steps.create_branch.outputs.branch }}"
+
+      - name: Create pull request
+        env:
+          GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
+        if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         run: |
           gh pr create \
             --title "Remediate Nancy findings on ${{ needs.gather_facts.outputs.branch }}" \
-            --body  "Fix Nancy findings on branch ${{ needs.gather_facts.outputs.branch }}" \
-            --head  ${{ steps.create_branch.outputs.branch }} \
-            --base  ${{ needs.gather_facts.outputs.branch }} \
-          && gh pr merge --auto --squash
+            --body "Fix Nancy findings on branch ${{ needs.gather_facts.outputs.branch }}" \
+            --head "${{ steps.create_branch.outputs.branch }}" \
+            --base "${{ needs.gather_facts.outputs.branch }}"
+          gh pr merge --auto --squash
