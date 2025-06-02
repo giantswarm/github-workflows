@@ -1,5 +1,8 @@
 # This workflow comments in pull requests of Go projects, informing
 # about any test coverage changes.
+#
+# In the calling repo, make sure to run this workflow
+# for all pushes to the default branch, too!
 name: Go test coverage report
 
 on:
