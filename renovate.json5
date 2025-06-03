@@ -13,7 +13,7 @@
       matchStrings: [
         '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\S+',
       ],
-      versioning: 'semver-coerced',
+      versioningTemplate: 'semver-coerced',
     },
   ],
 }
