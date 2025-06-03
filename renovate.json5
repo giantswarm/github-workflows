@@ -8,10 +8,10 @@
       description: 'Allow updating binaries in workflows installed via install-binary-action',
       customType: 'regex',
       managerFilePatterns: [
-        '/^\\.github/workflows/.*\\.yaml$/',
+        '/.*\\.yaml$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\sversion:\\s(?<currentValue>\\S+)',
+        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\s+version: (?<currentValue>\\S+)',
       ],
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
     },
