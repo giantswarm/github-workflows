@@ -11,9 +11,9 @@
         '/.*\\.yaml$/',
       ],
       matchStrings: [
-        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\s+version: (?<currentValue>\\S+)',
+        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\S+',
       ],
-      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
+      versioning: 'semver-coerced',
     },
   ],
 }
