@@ -16,4 +16,12 @@
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
     },
   ],
+  packageRules: [
+    {
+      "matchDepNames": [
+        "/^giantswarm/architect$/",
+      ],
+      "allowedVersions": "<= 9999.0.0", // fix for bad tags in architect like '9777070'
+    },
+  ],
 }
