@@ -15,7 +15,7 @@ on:
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Print github context JSON
         run: |
@@ -24,7 +24,7 @@ jobs:
           EOF
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       repo_name:        ${{ steps.gather_facts.outputs.repo_name }}
       branch:           ${{ steps.gather_facts.outputs.branch }}
@@ -123,7 +123,7 @@ jobs:
 
   prepare_release_pr:
     name: Prepare release PR for Backstage project
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' && github.repository == 'giantswarm/backstage' }}
@@ -160,7 +160,7 @@ jobs:
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
   create_release_pr:
     name: Create release PR
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     needs:
       - gather_facts
       - prepare_release_pr
