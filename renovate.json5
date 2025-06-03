@@ -13,7 +13,7 @@
       matchStrings: [
         '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\S+version: (?<currentValue>\\S+)',
       ],
-      versioningTemplate: 'semver-coerced',
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
     },
   ],
 }
