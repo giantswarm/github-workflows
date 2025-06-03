@@ -4,4 +4,17 @@
     // Base config - https://github.com/giantswarm/renovate-presets/blob/main/default.json5
     "github>giantswarm/renovate-presets:default.json5",
   ],
+  customManagers: [
+    {
+      description: 'Allow updating binaries in workflows installed via install-binary-action',
+      customType: 'regex',
+      fileMatch: [
+        '^\\.github/workflows/.*\\.yaml$',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\\sversion:\\s(?<currentValue>\\S+)',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver{{/if}}',
+    },
+  ],
 }
