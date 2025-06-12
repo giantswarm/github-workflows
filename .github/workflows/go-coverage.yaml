@@ -20,6 +20,7 @@ jobs:
       with:
         # default fetch-depth is insufficent to find previous coverage notes
         fetch-depth: 10
+        persist-credentials: false
 
     - name: Create coverage report
       uses: gwatts/go-coverage-action@2845595538a59d63d1bf55f109c14e104c6f7cb3 # v2.0.0
