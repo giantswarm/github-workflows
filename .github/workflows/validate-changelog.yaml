@@ -1,4 +1,4 @@
-name: Validate Release Changelog
+name: Validate changelog
 
 on:
   workflow_call:
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   validate-changelog:
-    name: Validate Changelog Content
+    name: Validate changelog structure
     runs-on: ubuntu-24.04
 
     steps:
