@@ -1,28 +1,7 @@
 name: Validate changelog
 
 on:
-  workflow_call:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'CHANGELOG.md'
-    branches:
-      - 'legacy#release#v*.*.*'
-      - 'main#release#v*.*.*'
-      - 'main#release#major'
-      - 'main#release#minor'
-      - 'main#release#patch'
-      - 'master#release#v*.*.*'
-      - 'master#release#major'
-      - 'master#release#minor'
-      - 'master#release#patch'
-      - 'release#v*.*.*'
-      - 'release#major'
-      - 'release#minor'
-      - 'release#patch'
-      - 'release-v*.*.x#release#v*.*.*'
-      # "!" negates previous positive patterns so it has to be at the end.
-      - '!release-v*.x.x#release#v*.*.*'
+  workflow_call: {}
 
 permissions:
   contents: read
@@ -32,17 +11,19 @@ jobs:
   validate-changelog:
     name: Validate changelog structure
     runs-on: ubuntu-24.04
+    if: contains(github.event.pull_request.head.ref, '#release#')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Extract version from branch name
         id: extract_version
         env:
-          BRANCH_NAME: ${{ github.head_ref }}
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
         run: |
           branch_name="$BRANCH_NAME"
           echo "Branch name: $branch_name"
@@ -65,7 +46,7 @@ jobs:
             *"#release#major"|*"#release#minor"|*"#release#patch")
               # Extract bump type and get version from changelog
               bump_type=$(echo "$branch_name" | sed -E 's/.*#release#(major|minor|patch).*/\1/')
-              echo "Detected semantic version branch ($bump_type), extracting version from changelog..."
+              echo "🔍 Detected semantic version branch ($bump_type), extracting version from changelog..."
               
               if [ ! -f "CHANGELOG.md" ]; then
                 echo "::error::CHANGELOG.md not found"
