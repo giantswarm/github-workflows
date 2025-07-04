@@ -3,6 +3,8 @@ name: Gitleaks
 on:
   workflow_call: {}
 
+permissions: read-all
+
 jobs:
   gitleaks:
     runs-on: ubuntu-24.04
