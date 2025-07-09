@@ -17,6 +17,8 @@ on:
       aws_secret_access_key:
         required: true
 
+permissions: read-all
+
 jobs:
   publish:
     if: github.event.repository.visibility == 'public'

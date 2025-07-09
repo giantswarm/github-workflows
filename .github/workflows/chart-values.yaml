@@ -3,6 +3,8 @@ name: Validate chart values and schema
 on:
   workflow_call: {}
 
+permissions: read-all
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
