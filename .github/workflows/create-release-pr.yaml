@@ -26,12 +26,12 @@ jobs:
     name: Gather facts
     runs-on: ubuntu-24.04
     outputs:
-      repo_name:        ${{ steps.gather_facts.outputs.repo_name }}
-      branch:           ${{ steps.gather_facts.outputs.branch }}
-      base:             ${{ steps.gather_facts.outputs.base }}
+      repo_name: ${{ steps.gather_facts.outputs.repo_name }}
+      branch: ${{ steps.gather_facts.outputs.branch }}
+      base: ${{ steps.gather_facts.outputs.base }}
       needs_major_bump: ${{ steps.gather_facts.outputs.needs_major_bump }}
-      skip:             ${{ steps.pr_exists.outputs.skip }}
-      version:          ${{ steps.gather_facts.outputs.version }}
+      skip: ${{ steps.pr_exists.outputs.skip }}
+      version: ${{ steps.gather_facts.outputs.version }}
     steps:
       - name: Gather facts
         id: gather_facts
