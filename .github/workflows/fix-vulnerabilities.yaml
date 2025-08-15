@@ -8,12 +8,12 @@ on:
         required: true
         type: string
     secrets:
-        HERALD_APP_ID:
-            description: App ID for create-github-app-token
-            required: true
-        HERALD_APP_KEY:
-            description: Private key for create-github-app-token
-            required: true
+      HERALD_APP_ID:
+        description: App ID for create-github-app-token
+        required: true
+      HERALD_APP_KEY:
+        description: Private key for create-github-app-token
+        required: true
 
 jobs:
   gather_facts:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       branch: ${{ steps.gather_facts.outputs.branch }}
-      skip : ${{ steps.gather_facts.outputs.skip }}
+      skip: ${{ steps.gather_facts.outputs.skip }}
     steps:
       - name: Checkout code
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -81,7 +81,7 @@ jobs:
       - name: Run nancy-fixer fix
         uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.1
         timeout-minutes: 20
-      
+
       - name: Set up git identity
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"

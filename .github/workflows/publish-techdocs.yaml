@@ -43,18 +43,18 @@ jobs:
             ./node_modules
           restore-keys: |
             ${{ runner.os }}-build-${{ env.cache-name }}-
-      
+
       - if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
         name: List the state of node modules
         continue-on-error: true
         run: npm list
-      
+
       - name: Install techdocs-cli
         run: npm install @techdocs/cli
 
       - name: Show techdocs-cli version
         run: ./node_modules/@techdocs/cli/bin/techdocs-cli --version
-      
+
       - name: Generate mkdocs configuration
         id: generate_mkdocs_config
         shell: python {0}
@@ -132,22 +132,21 @@ jobs:
 
           with open("mkdocs.yml", "w") as f:
               f.write(output)
-          
+
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write("content_found=true\n")
 
-      
       - if: ${{ steps.generate_mkdocs_config.outputs.content_found == 'true' }}
         name: Generate documentation
         run: |
           mkdir $GITHUB_WORKSPACE/tmp-docs-output
           $GITHUB_WORKSPACE/node_modules/@techdocs/cli/bin/techdocs-cli \
             generate --verbose --output-dir=$GITHUB_WORKSPACE/tmp-docs-output
-      
+
       - if: ${{ steps.generate_mkdocs_config.outputs.content_found == 'true' }}
         name: Show output
         run: ls -la $GITHUB_WORKSPACE/tmp-docs-output
-      
+
       - if: ${{ steps.generate_mkdocs_config.outputs.content_found == 'true' }}
         name: Publish
         env:
