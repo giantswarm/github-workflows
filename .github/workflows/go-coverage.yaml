@@ -32,7 +32,7 @@ jobs:
         uses: gwatts/go-coverage-action@2845595538a59d63d1bf55f109c14e104c6f7cb3 # v2.0.0
         id: coverage
         env:
-            GITHUB_TOKEN: "${{ secrets.token }}"
+          GITHUB_TOKEN: "${{ secrets.token }}"
         with:
           # Optional coverage threshold
           # use fail-coverage to determine what should happen below this threshold
