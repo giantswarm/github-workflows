@@ -42,7 +42,7 @@ jobs:
                 exit 1
               fi
               ;;
-              
+
             *"#release#major"|*"#release#minor"|*"#release#patch")
               # Extract bump type and get version from changelog
               bump_type=$(echo "$branch_name" | sed -E 's/.*#release#(major|minor|patch).*/\1/')
@@ -55,7 +55,7 @@ jobs:
 
               # Get the first version entry (should be the newest one that architect created)
               version=$(grep -E "^## \[[0-9]+\.[0-9]+\.[0-9]+\]" CHANGELOG.md | head -1 | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
-              
+
               if [ -z "$version" ]; then
                 echo "::error::Could not find version in CHANGELOG.md"
                 echo "::error::Expected to find a line like: ## [X.Y.Z] - YYYY-MM-DD"
@@ -72,7 +72,7 @@ jobs:
               echo "::error::Expected patterns:"
               echo "  - main#release#v1.2.3"
               echo "  - main#release#major"
-              echo "  - main#release#minor"  
+              echo "  - main#release#minor"
               echo "  - main#release#patch"
               echo "  - master#release#v1.2.3"
               echo "  - master#release#major|minor|patch"
@@ -89,7 +89,7 @@ jobs:
 
           echo "Final extracted version: $version"
           echo "version=$version" >> $GITHUB_OUTPUT
-  
+
       - name: Validate changelog content
         run: |
           version="${{ steps.extract_version.outputs.version }}"
@@ -128,7 +128,7 @@ jobs:
             echo ""
             echo "Please add content under appropriate sections like:"
             echo "  ### Added     - for new features"
-            echo "  ### Changed   - for changes in existing functionality" 
+            echo "  ### Changed   - for changes in existing functionality"
             echo "  ### Fixed     - for any bug fixes"
             echo "  ### Removed   - for now removed features"
             echo "  ### Deprecated - for soon-to-be removed features"
