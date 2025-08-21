@@ -7,6 +7,8 @@
 # This is just a dummy change in the Go coverage workflow.
 name: Go test coverage report
 
+non-existing-key: bad-value
+
 on:
   workflow_call:
     secrets:
