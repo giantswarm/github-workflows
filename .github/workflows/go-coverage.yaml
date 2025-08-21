@@ -3,6 +3,8 @@
 #
 # In the calling repo, make sure to run this workflow
 # for all pushes to the default branch, too!
+#
+# This is just a dummy change in the Go coverage workflow.
 name: Go test coverage report
 
 on:
