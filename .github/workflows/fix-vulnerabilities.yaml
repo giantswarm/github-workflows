@@ -14,6 +14,12 @@ on:
       HERALD_APP_KEY:
         description: Private key for create-github-app-token
         required: true
+      NANCY_TOKEN:
+        description: Nancy token used to access the OSS Index database
+        required: true
+      NANCY_USER:
+        description: Nancy user used to access the OSS Index database
+        required: true
 
 jobs:
   gather_facts:
@@ -81,6 +87,9 @@ jobs:
       - name: Run nancy-fixer fix
         uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.5.1
         timeout-minutes: 20
+        env:
+          OSSI_USER: ${{ secrets.NANCY_USER }}
+          OSSI_TOKEN: ${{ secrets.NANCY_TOKEN }}
 
       - name: Set up git identity
         run: |
