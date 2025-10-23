@@ -67,8 +67,7 @@ jobs:
 
           while IFS= read -r file; do
             # Check if the path (including all directory names and file name) contains only ASCII characters
-            # ASCII characters range from 0x00 to 0x7F
-            if echo "$file" | LC_ALL=C grep -q '[^\x00-\x7F]'; then
+            if [[ "$file" = *[![:ascii:]]* ]]; then
               echo "::error file=$file::Path contains non-ASCII characters: $file"
               invalid_files="${invalid_files}${file}"$'\n'
               exit_code=1
