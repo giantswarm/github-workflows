@@ -44,6 +44,9 @@ jobs:
           echo "Base ref: $base_ref"
           echo "Head ref: $head_ref"
 
+          # Configure git to not escape non-ASCII characters in filenames
+          git config core.quotepath false
+
           # Get added and renamed files
           files=$(git diff --name-only --diff-filter=AR "$base_ref" "$head_ref" || true)
 
