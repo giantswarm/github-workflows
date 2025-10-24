@@ -101,12 +101,6 @@ jobs:
               fi
             done
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Why this matters" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "- Non-ASCII characters can cause issues with some tools and systems" >> $GITHUB_STEP_SUMMARY
-            echo "- ASCII-only paths ensure better compatibility across different platforms" >> $GITHUB_STEP_SUMMARY
-            echo "- They prevent encoding-related problems in version control systems" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "### How to fix" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Please rename these files/directories to use only ASCII characters (letters, numbers, and common symbols like \`-\`, \`_\`, \`.\`)." >> $GITHUB_STEP_SUMMARY
