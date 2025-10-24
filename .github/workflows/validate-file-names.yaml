@@ -1,3 +1,4 @@
+# Use this workflow in repositories to enforcee ASCII-only file names.
 name: Validate file names
 
 on:
@@ -8,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  validate-file-names:
-    name: Validate file names contain only ASCII characters
+  validate:
+    name: Validate file names
     runs-on: ubuntu-24.04
 
     steps:
@@ -18,40 +19,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get list of added or renamed files
+      - name: Get list of files to validate
         id: changed-files
         run: |
-          # Determine base and head refs based on trigger type
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # For manual triggers, compare current branch against main/master
-            # First try to find main, then master
-            if git rev-parse origin/main >/dev/null 2>&1; then
-              base_ref="origin/main"
-            elif git rev-parse origin/master >/dev/null 2>&1; then
-              base_ref="origin/master"
-            else
-              echo "::error::Could not find origin/main or origin/master branch"
-              exit 1
-            fi
-            head_ref="${{ github.sha }}"
-            echo "Manual trigger detected - comparing against $base_ref"
-          else
-            # For PR or workflow_call triggers
-            base_ref="${{ github.event.pull_request.base.sha || github.event.before }}"
-            head_ref="${{ github.event.pull_request.head.sha || github.sha }}"
-          fi
-
-          echo "Base ref: $base_ref"
-          echo "Head ref: $head_ref"
-
           # Configure git to not escape non-ASCII characters in filenames
           git config core.quotepath false
 
-          # Get added and renamed files
-          files=$(git diff --name-only --diff-filter=AR "$base_ref" "$head_ref" || true)
+          # Determine which files to validate based on trigger type
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # For manual triggers, validate ALL files in the repository
+            echo "Manual trigger detected - validating all files in repository"
+            files=$(git ls-files)
+          else
+            # For PR or workflow_call triggers, only validate added/renamed files
+            base_ref="${{ github.event.pull_request.base.sha || github.event.before }}"
+            head_ref="${{ github.event.pull_request.head.sha || github.sha }}"
+
+            echo "Base ref: $base_ref"
+            echo "Head ref: $head_ref"
+
+            # Get added and renamed files
+            files=$(git diff --name-only --diff-filter=AR "$base_ref" "$head_ref" || true)
+          fi
 
           if [ -z "$files" ]; then
-            echo "No added or renamed files found"
+            echo "No files found to validate"
             echo "has_files=false" >> $GITHUB_OUTPUT
           else
             echo "Files to validate:"
