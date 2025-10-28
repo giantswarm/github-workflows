@@ -1,0 +1,109 @@
+# Use this workflow in repositories to enforcee ASCII-only file names.
+name: Validate file names
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate file names
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Get list of files to validate
+        id: changed-files
+        run: |
+          # Configure git to not escape non-ASCII characters in filenames
+          git config core.quotepath false
+
+          # Determine which files to validate based on trigger type
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # For manual triggers, validate ALL files in the repository
+            echo "Manual trigger detected - validating all files in repository"
+            files=$(git ls-files)
+          else
+            # For PR or workflow_call triggers, only validate added/renamed files
+            base_ref="${{ github.event.pull_request.base.sha || github.event.before }}"
+            head_ref="${{ github.event.pull_request.head.sha || github.sha }}"
+
+            echo "Base ref: $base_ref"
+            echo "Head ref: $head_ref"
+
+            # Get added and renamed files
+            files=$(git diff --name-only --diff-filter=AR "$base_ref" "$head_ref" || true)
+          fi
+
+          if [ -z "$files" ]; then
+            echo "No files found to validate"
+            echo "has_files=false" >> $GITHUB_OUTPUT
+          else
+            echo "Files to validate:"
+            echo "$files"
+            echo "has_files=true" >> $GITHUB_OUTPUT
+            # Save files to a temporary file for the next step
+            echo "$files" > /tmp/files_to_check.txt
+          fi
+
+      - name: Validate file and directory names are ASCII only
+        if: steps.changed-files.outputs.has_files == 'true'
+        id: validate
+        run: |
+          invalid_files=""
+          exit_code=0
+
+          while IFS= read -r file; do
+            # Check if the path (including all directory names and file name) contains only ASCII characters
+            if [[ "$file" = *[![:ascii:]]* ]]; then
+              echo "::error file=$file::Path contains non-ASCII characters: $file"
+              invalid_files="${invalid_files}${file}"$'\n'
+              exit_code=1
+            fi
+          done < /tmp/files_to_check.txt
+
+          if [ $exit_code -eq 1 ]; then
+            echo "invalid_files<<EOF" >> $GITHUB_OUTPUT
+            echo "$invalid_files" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "validation_failed=true" >> $GITHUB_OUTPUT
+          else
+            echo "All file and directory names contain only ASCII characters"
+            echo "validation_failed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate job summary
+        if: always() && steps.changed-files.outputs.has_files == 'true'
+        run: |
+          if [ "${{ steps.validate.outputs.validation_failed }}" == "true" ]; then
+            echo "## :x: File Name Validation Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The following files or directories contain non-ASCII characters in their paths:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "${{ steps.validate.outputs.invalid_files }}" | while IFS= read -r file; do
+              if [ -n "$file" ]; then
+                echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### How to fix" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please rename these files/directories to use only ASCII characters (letters, numbers, and common symbols like \`-\`, \`_\`, \`.\`)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## :white_check_mark: File Name Validation Passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All file and directory names contain only ASCII characters." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if validation found issues
+        if: steps.validate.outputs.validation_failed == 'true'
+        run: |
+          echo "Validation failed - found files or directories with non-ASCII characters"
+          exit 1
