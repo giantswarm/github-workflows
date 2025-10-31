@@ -1,0 +1,38 @@
+# Adds any new issue to the general customer board
+#
+# Use it in repositories like this:
+#
+# on:
+#   issues:
+#     types: [opened]
+# jobs:
+#   add-to-board:
+#     uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
+#     secrets:
+#       ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}
+
+name: Add issue to general customer board
+on:
+  workflow_call:
+    secrets:
+      ISSUE_AUTOMATION:
+        required: true
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  BOARD_URL: https://github.com/orgs/giantswarm/projects/345
+
+jobs:
+  issue_to_customer_board:
+    name: Add issue to general customer board
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Add issue to general customer board
+      if: ${{ env.BOARD_URL != 'null' && env.BOARD_URL != '' }}
+      uses: actions/add-to-project@244f685bbc3b7adfa8466e08b698b5577571133e # v1.0.2
+      with:
+        project-url: ${{ env.BOARD_URL }}
+        github-token: ${{ secrets.ISSUE_AUTOMATION }}
