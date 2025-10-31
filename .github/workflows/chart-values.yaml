@@ -9,34 +9,34 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
-    - name: Checkout
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      with:
-        fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
 
-    - name: Install validator
-      run: |
-        wget -q -O ${HOME}/yajsv https://github.com/neilpa/yajsv/releases/download/v1.4.1/yajsv.linux.amd64
-        chmod +x ${HOME}/yajsv
+      - name: Install validator
+        run: |
+          wget -q -O ${HOME}/yajsv https://github.com/neilpa/yajsv/releases/download/v1.4.1/yajsv.linux.amd64
+          chmod +x ${HOME}/yajsv
 
-    - name: Check if values.yaml is a valid instance of values.schema.json
-      run: |
-        for chart_yaml in helm/*/Chart.yaml; do
-          helm_dir="${chart_yaml%/Chart.yaml}"
+      - name: Check if values.yaml is a valid instance of values.schema.json
+        run: |
+          for chart_yaml in helm/*/Chart.yaml; do
+            helm_dir="${chart_yaml%/Chart.yaml}"
 
-          if [ ! -f ${helm_dir}/values.schema.json ]; then
-            echo "Skipping validation for '${helm_dir}' folder, because 'values.schema.json' does not exist..."
-            continue
-          fi
+            if [ ! -f ${helm_dir}/values.schema.json ]; then
+              echo "Skipping validation for '${helm_dir}' folder, because 'values.schema.json' does not exist..."
+              continue
+            fi
 
-          values=${helm_dir}/values.yaml
-          if [ -f ${helm_dir}/ci/ci-values.yaml ]; then
-            # merge ci-values.yaml into values.yaml (providing required values)
-            echo -e "\nMerged values:\n=============="
-            yq '. *= load("'${helm_dir}'/ci/ci-values.yaml")' ${helm_dir}/values.yaml | tee ${helm_dir}/combined-values.yaml
-            echo -e "\n==============\n"
-            values=${helm_dir}/combined-values.yaml
-          fi
+            values=${helm_dir}/values.yaml
+            if [ -f ${helm_dir}/ci/ci-values.yaml ]; then
+              # merge ci-values.yaml into values.yaml (providing required values)
+              echo -e "\nMerged values:\n=============="
+              yq '. *= load("'${helm_dir}'/ci/ci-values.yaml")' ${helm_dir}/values.yaml | tee ${helm_dir}/combined-values.yaml
+              echo -e "\n==============\n"
+              values=${helm_dir}/combined-values.yaml
+            fi
 
-          ${HOME}/yajsv -s ${helm_dir}/values.schema.json ${values}
-        done
+            ${HOME}/yajsv -s ${helm_dir}/values.schema.json ${values}
+          done
