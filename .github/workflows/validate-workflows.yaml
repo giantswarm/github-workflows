@@ -33,11 +33,10 @@ jobs:
             echo "Found issues in the following files:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
-            # Extract and format only the files with errors
+            # Extract and format only lines with errors
             if [ -s yamllint-output.txt ]; then
-              # Group errors by file
               echo '```' >> $GITHUB_STEP_SUMMARY
-              cat yamllint-output.txt >> $GITHUB_STEP_SUMMARY
+              grep '\[error\]' yamllint-output.txt >> $GITHUB_STEP_SUMMARY || echo "No errors found in output" >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
             fi
           fi
