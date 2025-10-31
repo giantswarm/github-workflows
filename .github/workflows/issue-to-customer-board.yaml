@@ -2,6 +2,7 @@
 #
 # Use it in repositories like this:
 #
+# name: Add issue to general customer board
 # on:
 #   issues:
 #     types: [opened]
