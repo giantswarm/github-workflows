@@ -30,7 +30,7 @@ jobs:
           if [ $exit_code -ne 0 ]; then
             echo "## YAML Validation Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Found issues in the following files:" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Found issues in the following files:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             
             # Extract and format only lines with errors
