@@ -18,21 +18,21 @@ jobs:
       - name: Validate YAML
         run: |
           set +e
-          
+
           # Run yamllint and capture output
           docker run --rm -v "$PWD:/data" -w /data \
             gsoci.azurecr.io/giantswarm/yamllint:1.37.1 \
             --format=parsable . > yamllint-output.txt 2>&1
-          
+
           exit_code=$?
-          
+
           # Write summary only if there are failures
           if [ $exit_code -ne 0 ]; then
             echo "## YAML Validation Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "❌ Found issues in the following files:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            
+
             # Extract and format only lines with errors
             if [ -s yamllint-output.txt ]; then
               echo '```' >> $GITHUB_STEP_SUMMARY
@@ -40,10 +40,10 @@ jobs:
               echo '```' >> $GITHUB_STEP_SUMMARY
             fi
           fi
-          
+
           # Clean up
           rm -f yamllint-output.txt
-          
+
           # Exit with the original exit code
           exit $exit_code
 
