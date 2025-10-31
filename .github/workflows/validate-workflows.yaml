@@ -16,9 +16,36 @@ jobs:
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - name: Validate YAML
-        uses: docker://gsoci.azurecr.io/giantswarm/yamllint:1.37.1
-        with:
-          args: --format=github .
+        run: |
+          set +e
+
+          # Run yamllint and capture output
+          docker run --rm -v "$PWD:/data" -w /data \
+            gsoci.azurecr.io/giantswarm/yamllint:1.37.1 \
+            --format=parsable . > yamllint-output.txt 2>&1
+
+          exit_code=$?
+
+          # Write summary only if there are failures
+          if [ $exit_code -ne 0 ]; then
+            echo "## YAML Validation Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Found issues in the following files:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            # Extract and format only lines with errors
+            if [ -s yamllint-output.txt ]; then
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              grep '\[error\]' yamllint-output.txt >> $GITHUB_STEP_SUMMARY || echo "No errors found in output" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          # Clean up
+          rm -f yamllint-output.txt
+
+          # Exit with the original exit code
+          exit $exit_code
 
       - name: Validate GitHub Actions
         uses: jazzsequence/github-action-validator@8dce06e551e2b2a09f6e8c72e76fa4b60da5c8f1 # v1.0.1
