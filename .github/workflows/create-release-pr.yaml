@@ -225,6 +225,14 @@ jobs:
             if [ $(grep -c "^version:.*\.Version.*$" "${chart_yaml}") = "0" ]; then
               yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
             fi
+
+            # Check if ABS is configured for the project.
+            if [ -f ".abs/main.yaml" ]; then
+              # Check if replace-app-version-with-git is enabled in ABS config.
+              if [ "$(yq '.replace-app-version-with-git' '.abs/main.yaml')" = "true" ]; then
+                yq -i '.appVersion = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+              fi
+            fi
           fi
 
       - name: Bump go module defined in go.mod if needed
