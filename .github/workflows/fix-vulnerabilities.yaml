@@ -7,6 +7,10 @@ on:
         description: Branch on which to fix vulnerabilities
         required: true
         type: string
+      log_level:
+        description: Log Level (info / error / debug)
+        default: "info"
+        type: string
     secrets:
       HERALD_APP_ID:
         description: App ID for create-github-app-token
@@ -90,6 +94,7 @@ jobs:
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
           OSSI_TOKEN: ${{ secrets.NANCY_TOKEN }}
+          LOG_LEVEL: ${{ inputs.log_level }}
 
       - name: Set up git identity
         run: |
