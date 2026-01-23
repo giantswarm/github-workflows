@@ -25,10 +25,14 @@ on:
         description: Nancy user used to access the OSS Index database
         required: true
 
+permissions: {}
+
 jobs:
   gather_facts:
     name: Gather facts
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     outputs:
       branch: ${{ steps.gather_facts.outputs.branch }}
       skip: ${{ steps.gather_facts.outputs.skip }}
