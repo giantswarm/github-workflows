@@ -12,6 +12,8 @@ on:
         description: "Token to create the pull request"
         required: true
 
+permissions: {}
+
 jobs:
   debug_info:
     name: Debug info
