@@ -10,6 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Changed
 
+- Restrict permissions for GITHUB_TOKEN in "Fix Vulnerabilities" workflow.
 - Restrict permissions for GITHUB_TOKEN in "Create Release PR" workflow.
 
 ## 2026-01-16
