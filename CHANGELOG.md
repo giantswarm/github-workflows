@@ -12,6 +12,10 @@ Instead this file uses a date-based structure.
 
 - Set restrictive default token permissions for `create-release-pr`, `fix-vulnerabilities`, `chart-values`, `gitleaks`, `go-coverage`, `issue-to-customer-board`, `validate-changelog`, `validate-file-names`, and `validate-workflows` workflows.
 
+### Fixed
+
+- Fix git push in "Create Release PR" workflow by disabling credential persistence in checkout steps.
+
 ## 2026-01-16
 
 ### Changed
