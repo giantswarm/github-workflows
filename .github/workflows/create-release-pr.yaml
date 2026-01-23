@@ -126,6 +126,8 @@ jobs:
   prepare_release_pr:
     name: Prepare release PR for Backstage project
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' && github.repository == 'giantswarm/backstage' }}
@@ -163,6 +165,8 @@ jobs:
   create_release_pr:
     name: Create release PR
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     needs:
       - gather_facts
       - prepare_release_pr
