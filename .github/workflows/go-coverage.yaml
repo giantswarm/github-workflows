@@ -11,7 +11,7 @@ on:
       token:
         required: true
 
-permissions: read-all
+permissions: {}
 
 jobs:
   coverage:
