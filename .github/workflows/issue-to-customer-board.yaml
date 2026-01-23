@@ -19,9 +19,7 @@ on:
       ISSUE_AUTOMATION:
         required: true
 
-permissions:
-  contents: read
-  issues: write
+permissions: {}
 
 env:
   BOARD_URL: https://github.com/orgs/giantswarm/projects/345
