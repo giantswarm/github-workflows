@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Fixed
 
-- Replace `permissions: read-all` with explicit job-level permissions in `ossf-scorecard` and `publish-techdocs` workflows to work correctly when called from workflows with restricted permissions.
+- Replace `permissions: read-all` with explicit job-level permissions in `ossf-scorecard` and `publish-techdocs` workflows to work correctly when called from workflows with restricted permissions. Added missing `contents: read` permission to `ossf-scorecard` job.
 
 ## 2026-01-23
 
