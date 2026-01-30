@@ -17,8 +17,14 @@ jobs:
     name: Scorecard analysis
     runs-on: ubuntu-24.04
     permissions:
-      # Needed to checkout the repository.
+      # Needed to checkout the repository and for scorecard to analyze commits.
       contents: read
+      # Needed for scorecard to analyze CI/CD workflows.
+      actions: read
+      # Needed for scorecard checks on private repositories.
+      issues: read
+      pull-requests: read
+      checks: read
       # Needed to upload the results to code-scanning dashboard.
       security-events: write
       # Needed to publish results and get a badge (see publish_results below).
