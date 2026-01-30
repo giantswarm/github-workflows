@@ -16,7 +16,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- Add pull request template with checklist for changelog and permissions.
+- Add pull request template with checklist for changelog.
 
 ### Changed
 
