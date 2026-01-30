@@ -17,12 +17,14 @@ on:
       aws_secret_access_key:
         required: true
 
-permissions: read-all
+permissions: {}
 
 jobs:
   publish:
     if: github.event.repository.visibility == 'public'
     runs-on: 'ubuntu-latest'
+    permissions:
+      contents: read
     steps:
       - name: Set up NodeJS
         uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0

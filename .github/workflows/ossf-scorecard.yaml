@@ -10,8 +10,7 @@ on:
       scorecard_token:
         required: true
 
-# Declare default permissions as read only.
-permissions: read-all
+permissions: {}
 
 jobs:
   analysis:
