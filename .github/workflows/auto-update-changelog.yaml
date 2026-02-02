@@ -29,9 +29,13 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
           prompt: |
-            If a CHANGELOG.md file exists in the repository root, check if the current pull request updates it.
-            
-            If CHANGELOG.md exists but is not updated in this PR, update it with information about the changes in this branch compared to the default branch.
+            If a CHANGELOG.md file exists in the repository root, check if the current pull
+            request updates it.
 
-            Normally, dependency updates fall under the `### Changed` category. In some cases, if they are security-related, they might fall under the `### Fixed` category. Check the pull request title and description for hints.
+            If CHANGELOG.md exists but is not updated in this PR, update it with information
+            about the changes in this branch compared to the default branch.
+
+            Normally, dependency updates fall under the `### Changed` category. In some cases,
+            if they are security-related, they might fall under the `### Fixed` category. Check
+            the pull request title and description for hints.
           claude_args: "--max-turns 5 --model claude-opus-4-5-20251101"
