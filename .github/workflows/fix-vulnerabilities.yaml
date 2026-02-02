@@ -98,7 +98,7 @@ jobs:
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
           OSSI_TOKEN: ${{ secrets.NANCY_TOKEN }}
-          LOG_LEVEL: ${{ inputs.log_level }}
+          LOG_LEVEL: ${{ inputs.log_level || 'info' }}
 
       - name: Set up git identity
         run: |
