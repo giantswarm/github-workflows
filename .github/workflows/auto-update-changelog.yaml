@@ -41,6 +41,6 @@ jobs:
 
             Comment into the PR to inform the author about your updating of the changelog.
           claude_args: >
-            --max-turns 5
-            --model claude-opus-4-5-20251101
+            --max-turns 10
+            --model claude-haiku-4-5-20251101
             --allowedTools Bash
