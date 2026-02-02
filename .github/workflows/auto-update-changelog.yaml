@@ -40,4 +40,7 @@ jobs:
             the pull request title and description for hints.
 
             Comment into the PR to inform the author about your updating of the changelog.
-          claude_args: "--max-turns 5 --model claude-opus-4-5-20251101"
+          claude_args: >
+            --max-turns 5
+            --model claude-opus-4-5-20251101
+            --allowedTools Bash
