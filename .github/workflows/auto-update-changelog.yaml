@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # To push commits
-      #pull-requests: write # To comment in PR
+      pull-requests: write # To comment in PR
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -38,4 +38,6 @@ jobs:
             Normally, dependency updates fall under the `### Changed` category. In some cases,
             if they are security-related, they might fall under the `### Fixed` category. Check
             the pull request title and description for hints.
+
+            Comment into the PR to inform the author about your updating of the changelog.
           claude_args: "--max-turns 5 --model claude-opus-4-5-20251101"
