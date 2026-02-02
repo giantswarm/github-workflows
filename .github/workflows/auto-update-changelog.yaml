@@ -1,7 +1,12 @@
 name: Auto-update changelog
 
 on:
-  workflow_call: {}
+  workflow_call:
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: true
+      TAYLORBOT_GITHUB_ACTION:
+        required: true
 
 permissions: {}
 
