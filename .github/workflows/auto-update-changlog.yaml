@@ -1,0 +1,31 @@
+name: Auto-update changelog
+
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # To push commits
+      #pull-requests: write # To comment in PR
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # We need the full history to compare changes
+          persist-credentials: false
+
+      - name: Update changelog
+        uses: anthropics/claude-code-action@70e16deb18402428bd09e08d1ec3662a872e3c72 # v1.0.41
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            If a CHANGELOG.md file exists in the repository root, check if the current pull request updates it.
+            
+            If CHANGELOG.md exists but is not updated in this PR, update it with information about the changes in this branch compared to the default branch.
+
+            Normally, dependency updates fall under the `### Changed` category. In some cases, if they are security-related, they might fall under the `### Fixed` category. Check the pull request title and description for hints.
+          claude_args: "--max-turns 5 --model claude-opus-4-5-20251101"
