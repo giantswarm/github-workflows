@@ -10,6 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
+- Add reusable workflow `cluster-values-validation.yaml`.
 - Add reusable workflow `helm-render-diff.yaml`.
 - Add reusable workflow `update-chart.yaml`.
 
