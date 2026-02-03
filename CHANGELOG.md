@@ -10,6 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
+- Add reusable workflow `documentation-validation.yaml`.
 - Add reusable workflow `json-schema-validation.yaml`.
 - Add reusable workflow `cluster-values-validation.yaml`.
 - Add reusable workflow `helm-render-diff.yaml`.
