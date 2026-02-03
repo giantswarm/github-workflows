@@ -157,7 +157,7 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "Prepare release v${{ env.version }}"
+          git commit -m "Prepare release v${{ env.version }} [skip ci]"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
