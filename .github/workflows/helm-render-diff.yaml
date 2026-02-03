@@ -50,7 +50,7 @@ jobs:
       - name: install helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
-           version: ${{ env.helm_ver }}
+          version: ${{ env.helm_ver }}
       - run: which helm
       - name: install dyff
         uses: giantswarm/install-binary-action@c94c7adadeb14af4bdbdd601f9a6e7f69638134c # v4.0.0
@@ -70,15 +70,19 @@ jobs:
           # Charts from cluster-test-catalog should be used only for testing purposes.
           helm repo add cluster-test-catalog https://giantswarm.github.io/cluster-test-catalog/
 
-          helm dependency build helm/${{ github.event.repository.name }}
+          REPO_NAME="${{ github.event.repository.name }}"
+          helm dependency build "helm/${REPO_NAME}"
 
-          for test_file_path in helm/${{ github.event.repository.name }}/ci/test-*-values.yaml; do
+          for test_file_path in helm/${REPO_NAME}/ci/test-*-values.yaml; do
             echo
             echo "Rendering Helm template for ${test_file_path} on current code"
 
             mkdir -p "/tmp/${test_file_path}"
 
-            helm template -n org-giantswarm -f "helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${test_file_path}" "helm/${{ github.event.repository.name }}" > "/tmp/${test_file_path}/render-new.yaml"
+            helm template -n org-giantswarm \
+              -f "helm/${REPO_NAME}/ci/ci-values.yaml" \
+              -f "${test_file_path}" \
+              "helm/${REPO_NAME}" > "/tmp/${test_file_path}/render-new.yaml"
           done
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -86,9 +90,10 @@ jobs:
           path: 'old'
       - name: render helm with main branch code
         run: |
-          helm dependency build old/helm/${{ github.event.repository.name }}
+          REPO_NAME="${{ github.event.repository.name }}"
+          helm dependency build "old/helm/${REPO_NAME}"
 
-          for test_file_path in helm/${{ github.event.repository.name }}/ci/test-*-values.yaml; do
+          for test_file_path in helm/${REPO_NAME}/ci/test-*-values.yaml; do
             echo
             echo "Rendering Helm template for ${test_file_path} on old code"
 
@@ -97,17 +102,21 @@ jobs:
               continue
             fi
 
-            helm template -n org-giantswarm -f "old/helm/${{ github.event.repository.name }}/ci/ci-values.yaml" -f "${test_file_path}" "old/helm/${{ github.event.repository.name }}" > "/tmp/${test_file_path}/render-old.yaml"
+            helm template -n org-giantswarm \
+              -f "old/helm/${REPO_NAME}/ci/ci-values.yaml" \
+              -f "${test_file_path}" \
+              "old/helm/${REPO_NAME}" > "/tmp/${test_file_path}/render-old.yaml"
           done
       - name: get the diffs
         uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0  # v2.0.0
         with:
           run: |
             marker="=== No differences at all ==="
+            REPO_NAME="${{ github.event.repository.name }}"
             (
             found_differences=
             first=1
-            for test_file_path in helm/${{ github.event.repository.name }}/ci/test-*-values.yaml; do
+            for test_file_path in helm/${REPO_NAME}/ci/test-*-values.yaml; do
               if [ "${first}" = 1 ]; then
                 first=
               else
@@ -115,7 +124,12 @@ jobs:
                 echo
               fi
               echo "=== Differences when rendered with values file ${test_file_path} ==="
-                dyff between --set-exit-code --ignore-order-changes --omit-header --use-go-patch-style "/tmp/${test_file_path}/render-old.yaml" "/tmp/${test_file_path}/render-new.yaml" && echo "No difference" || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
+              old_file="/tmp/${test_file_path}/render-old.yaml"
+              new_file="/tmp/${test_file_path}/render-new.yaml"
+              dyff between --set-exit-code --ignore-order-changes --omit-header \
+                --use-go-patch-style "${old_file}" "${new_file}" \
+                && echo "No difference" \
+                || { res=$?; found_differences=1; if [[ $res -eq 255 ]]; then echo "Diff error"; fi; }
             done
 
             if [ -z "${found_differences}" ]; then
