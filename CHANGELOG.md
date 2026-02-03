@@ -11,6 +11,12 @@ Instead this file uses a date-based structure.
 ### Added
 
 - Add reusable workflow `cluster-values-validation.yaml`.
+- Add reusable workflow `helm-render-diff.yaml`.
+- Add reusable workflow `update-chart.yaml`.
+
+### Fixed
+
+- Prevent duplicate `prepare_release_pr` job runs in `create-release-pr` workflow by adding `[skip ci]` to the commit message.
 
 ## 2026-02-02
 
