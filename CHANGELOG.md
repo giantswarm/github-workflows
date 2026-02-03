@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## 2026-02-03
 
+### Added
+
+- Add reusable workflow `update-chart.yaml`.
+
 ### Fixed
 
 - Prevent duplicate `prepare_release_pr` job runs in `create-release-pr` workflow by adding `[skip ci]` to the commit message.
