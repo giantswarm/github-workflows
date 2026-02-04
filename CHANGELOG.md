@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## 2026-02-04
 
+### Added
+
+- Add reusable workflow `create-release.yaml` with inputs for CLI build artifacts and devctl-specific git fetch.
+
 ### Fixed
 
 - Prevent duplicate workflow runs in `create-release-pr` by marking commits with `Release-Workflow-Run` trailer.
