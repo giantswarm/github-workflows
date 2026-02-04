@@ -314,9 +314,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ env.TAG }}
-      - name: Fetch main branch for header templates
-        if: ${{ inputs.fetch-deep-gitlog-for-build }}
-        run: "git fetch origin main --unshallow"
+          fetch-depth: ${{ inputs.fetch-deep-gitlog-for-build && 0 || 1 }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform
