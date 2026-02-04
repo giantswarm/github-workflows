@@ -8,7 +8,7 @@ on:
         type: boolean
         default: false
       fetch-deep-gitlog-for-build:
-        description: "Fetch full git history for build (needed for devctl)"
+        description: "Fetch full git history for build (needed in special cases only)"
         type: boolean
         default: false
     secrets:

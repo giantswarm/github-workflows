@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- Add reusable workflow `create-release.yaml` with inputs for CLI build artifacts and devctl-specific git fetch.
+- Add reusable workflow `create-release.yaml` with inputs for CLI build artifacts and optional full git history fetch.
 
 ### Fixed
 
