@@ -32,7 +32,7 @@ jobs:
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
       needs_major_bump: ${{ steps.gather_facts.outputs.needs_major_bump }}
-      skip: ${{ steps.check_skip.outputs.skip }}
+      skip: ${{ steps.pr_exists.outputs.skip }}
       version: ${{ steps.gather_facts.outputs.version }}
     steps:
       - name: Gather facts
@@ -109,30 +109,19 @@ jobs:
           echo "head=${head}" >> $GITHUB_OUTPUT
           echo "version=${version}" >> $GITHUB_OUTPUT
 
-      - name: Check if workflow should be skipped
-        id: check_skip
+      - name: Check if PR exists
+        id: pr_exists
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
-
-          # Check if PR already exists
           if gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state | grep -i 'open' > /dev/null; then
             gh pr view --repo "${{ github.repository }}" "${branch}"
             echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
-
-          # Check if latest commit was created by this workflow (has our trailer)
-          commit_message=$(gh api "repos/${{ github.repository }}/commits/${branch}" --jq '.commit.message' 2>/dev/null || echo "")
-          if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
-            echo "Latest commit was created by release workflow, skipping"
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "skip=false" >> $GITHUB_OUTPUT
 
   prepare_release_pr:
     name: Prepare release PR for Backstage project
@@ -168,7 +157,7 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "Prepare release v${{ env.version }}" -m "Release-Workflow-Run: ${{ github.run_id }}"
+          git commit -m "Prepare release v${{ env.version }} [skip ci]"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
