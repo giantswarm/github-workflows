@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-02-06
+
+### Changed
+
+- Skip `ossf-scorecard` workflow in private repositories to avoid unnecessary failures.
+
 ## 2026-02-05
 
 ### Fixed
