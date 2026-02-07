@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-02-07
+
+### Added
+
+- Add reusable workflow `update-action-version.yaml` to update version in composite action.yml files during release PRs.
+
 ## 2026-02-06
 
 ### Changed

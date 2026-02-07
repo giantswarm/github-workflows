@@ -1,0 +1,92 @@
+# This reusable workflow runs when a release PR is created and updates the
+# version in a composite action's action.yml to match the release version.
+#
+# It finds the open release PR (matching "Release v<semver>"), extracts the
+# version, and updates the specified action.yml file on the release branch.
+
+name: Update action version
+
+on:
+  workflow_call:
+    inputs:
+      action_yml_path:
+        description: "Path to the action.yml file to update (e.g., actions/verify-helm-schema/action.yml)"
+        required: true
+        type: string
+      yq_expression:
+        description: "yq expression for the version field to update"
+        required: false
+        type: string
+        default: ".runs.steps[0].with.version"
+
+permissions: {}
+
+jobs:
+  get_version:
+    name: Get version from PR title
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      branch: ${{ steps.get_version.outputs.branch }}
+    steps:
+      - name: Find release PR and extract version
+        id: get_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # List open PRs
+          prs=$(gh pr list --repo "${{ github.repository }}" --state open --json title,number,headRefName)
+
+          # Filter for release PRs matching "Release v<semver>"
+          release_prs=$(echo "$prs" | jq '[.[] | select(.title | test("^Release v[0-9]+\\.[0-9]+\\.[0-9]+"))]')
+
+          count=$(echo "$release_prs" | jq 'length')
+          if [ "$count" -ne 1 ]; then
+            echo "::warning::Expected exactly 1 release PR, found $count. Skipping."
+            exit 0
+          fi
+
+          title=$(echo "$release_prs" | jq -r '.[0].title')
+          branch=$(echo "$release_prs" | jq -r '.[0].headRefName')
+          version=$(echo "$title" | sed 's/^Release v//')
+
+          echo "Found release PR: $title"
+          echo "Version: $version"
+          echo "Branch: $branch"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+  update_version:
+    name: Update version in action.yml
+    runs-on: ubuntu-24.04
+    needs: get_version
+    if: needs.get_version.outputs.version
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.get_version.outputs.branch }}
+          persist-credentials: false
+      - name: Update version in action.yml
+        uses: mikefarah/yq@2be0094729a1006f61e8339ce9934bfb3cbb549f # v4.52.2
+        with:
+          cmd: yq -i '${{ inputs.yq_expression }} = "${{ needs.get_version.outputs.version }}"' ${{ inputs.action_yml_path }}
+      - name: Set up git identity
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      - name: Create release commit
+        run: |
+          git add -A
+          git commit -m "Update version in action.yml"
+      - name: Push changes
+        env:
+          remote_repo: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          branch_name: ${{ needs.get_version.outputs.branch }}
+        run: |
+          git push "${remote_repo}" "HEAD:${branch_name}"
