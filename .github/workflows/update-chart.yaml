@@ -72,7 +72,7 @@ jobs:
     name: Create update PR
     runs-on: ubuntu-24.04
     permissions:
-      contents: read
+      contents: write
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
