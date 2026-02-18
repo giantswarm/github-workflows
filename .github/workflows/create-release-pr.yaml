@@ -195,7 +195,7 @@ jobs:
         with:
           binary: architect
           # renovate: datasource=github-tags depName=giantswarm/architect
-          version: v7.3.0
+          version: v7.4.0
           download_url: "https://github.com/giantswarm/architect/releases/download/${version}/architect-${version}-linux-amd64.tar.gz"
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
