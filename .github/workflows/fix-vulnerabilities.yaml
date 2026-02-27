@@ -93,6 +93,7 @@ jobs:
           git pull origin "${branch}" || true
 
       - name: Run nancy-fixer fix
+        # renovate: datasource=github-releases depName=giantswarm/nancy-fixer
         uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.6.0
         timeout-minutes: 20
         env:
