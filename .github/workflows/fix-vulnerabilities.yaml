@@ -93,7 +93,7 @@ jobs:
           git pull origin "${branch}" || true
 
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.6.0
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.6.1
         timeout-minutes: 20
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
