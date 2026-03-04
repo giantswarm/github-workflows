@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- Add `zizmor` action for scanning GitHub Actions.
+- Add `analyze-github-actions` action for scanning GitHub Actions.
 
 ## 2026-02-09
 
