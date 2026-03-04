@@ -6,8 +6,8 @@ on:
 permissions: {}
 
 jobs:
-  zizmor:
-    name: zizmor
+  analyze-github-actions:
+    name: analyze-github-actions
     runs-on: ubuntu-24.04
     permissions:
       security-events: write
