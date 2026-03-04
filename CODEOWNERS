@@ -5,3 +5,4 @@
 /.github/workflows/fix-vulnerabilities.yaml @giantswarm/team-shield
 /.github/workflows/gitleaks.yaml @giantswarm/team-shield
 /.github/workflows/ossf-scorecard.yaml @giantswarm/team-shield
+/.github/workflows/zizmor.yaml @giantswarm/team-shield
