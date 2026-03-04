@@ -2,6 +2,7 @@
 * @giantswarm/team-honeybadger
 
 # Specific workflow owners (if not equal to default)
+/.github/workflows/analyze-github-actions.yaml @giantswarm/team-shield
 /.github/workflows/fix-vulnerabilities.yaml @giantswarm/team-shield
 /.github/workflows/gitleaks.yaml @giantswarm/team-shield
 /.github/workflows/ossf-scorecard.yaml @giantswarm/team-shield
