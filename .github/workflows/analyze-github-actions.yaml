@@ -24,22 +24,22 @@ jobs:
           BASE_CONFIG=".github/zizmor.base.yml"
           LOCAL_CONFIG=".github/zizmor.yml"
           TMP_MERGED="zizmor.tmp.yml"
-          
+
           if [[ -f "$BASE_CONFIG" && -f "$LOCAL_CONFIG" ]]; then
             echo "Both base and local configurations found. Deep merging..."
-            # Deep merge: local config overrides base config. 
+            # Deep merge: local config overrides base config.
             # Arrays (like rule ignores) will be concatenated, not overwritten.
             yq eval-all '. as $item ireduce ({}; . *+ $item)' "$BASE_CONFIG" "$LOCAL_CONFIG" > "$TMP_MERGED"
             mv "$TMP_MERGED" "$LOCAL_CONFIG"
             echo "Merge complete."
-            
+
           elif [[ -f "$BASE_CONFIG" && ! -f "$LOCAL_CONFIG" ]]; then
             echo "Only base configuration found. Copying to standard path..."
             cp "$BASE_CONFIG" "$LOCAL_CONFIG"
-            
+
           elif [[ -f "$LOCAL_CONFIG" ]]; then
             echo "Only local configuration found. Proceeding as-is."
-            
+
           else
             echo "No zizmor configuration found. Using default internal rules."
           fi
