@@ -24,7 +24,7 @@ jobs:
           BASE_CONFIG=".github/zizmor.base.yml"
           LOCAL_CONFIG=".github/zizmor.yml"
           TMP_MERGED="zizmor.tmp.yml"
-
+          
           if [[ -f "$BASE_CONFIG" && -f "$LOCAL_CONFIG" ]]; then
             echo "Both base and local configurations found. Deep merging..."
             # Deep merge: local config overrides base config. 
