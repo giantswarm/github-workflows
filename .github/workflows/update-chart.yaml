@@ -132,7 +132,6 @@ jobs:
           gh pr create \
             --title "Automated update from upstream" \
             --label "automated-update" \
-            --assignee "${{ github.actor }}" \
             --base "${{ env.base }}" \
             --head "${{ env.head }}" \
             --body-file - << EOF
@@ -141,3 +140,6 @@ jobs:
           - [ ] **:warning: The CHANGELOG.md file has been updated**
           - [ ] **:warning: Additional changes in ignored files (see vendir.yml) have been adapted and migrated**
           EOF
+
+          # Splitting this into two calls to handle errors when renovate triggers it
+          gh pr edit --add-assignee "${{ github.actor }}" || true
