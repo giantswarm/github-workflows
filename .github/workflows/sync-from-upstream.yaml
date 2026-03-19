@@ -54,6 +54,8 @@ jobs:
       branch: ${{ inputs.update_branch }}
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+    permissions:
+      contents: write
 
   sync-and-update:
     runs-on: ubuntu-24.04
