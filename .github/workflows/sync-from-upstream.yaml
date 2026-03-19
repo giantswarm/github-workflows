@@ -1,0 +1,225 @@
+name: Sync from upstream
+
+on:
+  workflow_call:
+    inputs:
+      chart_dir:
+        description: Path to the Helm chart directory (e.g. helm/myapp). Auto-detected from helm/ if not set.
+        required: false
+        type: string
+      update_branch:
+        description: Branch to sync upstream changes onto
+        default: 'main#update-chart'
+        required: false
+        type: string
+    secrets:
+      HERALD_APP_ID:
+        description: App ID for create-github-app-token
+        required: true
+      HERALD_APP_KEY:
+        description: Private key for create-github-app-token
+        required: true
+      TAYLORBOT_GITHUB_ACTION:
+        description: TaylorBot token used by the update-chart workflow
+        required: true
+
+permissions: {}
+
+jobs:
+  prepare-update-branch:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Prepare update branch
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch origin
+          git checkout main
+          git checkout -B "${{ inputs.update_branch }}"
+          git checkout "origin/${{ github.ref_name }}" -- vendir.yml
+          git add vendir.yml
+          git commit -m "Update vendir.yml from upstream"
+          git push origin "${{ inputs.update_branch }}" --force
+
+  call-update-chart:
+    needs: prepare-update-branch
+    uses: ./.github/workflows/update-chart.yaml
+    with:
+      branch: ${{ inputs.update_branch }}
+    secrets:
+      TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+
+  sync-and-update:
+    runs-on: ubuntu-24.04
+    needs: call-update-chart
+    outputs:
+      entries: ${{ steps.changelogger.outputs.entries }}
+      new_values: ${{ steps.values_sync_dry_run.outputs.new_values }}
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.update_branch }}
+          token: ${{ steps.generate_token.outputs.token }}
+      - name: Fetch main branch for version comparison
+        run: git fetch origin main
+      - name: Detect chart directory
+        id: chart
+        run: |
+          if [[ -n "${{ inputs.chart_dir }}" ]]; then
+            chart_dir="${{ inputs.chart_dir }}"
+          else
+            chart_dir=$(find helm -maxdepth 2 -name "Chart.yaml" \
+              ! -path "*/charts/*" \
+              ! -path "helm/tests/*" \
+              -exec dirname {} \; | head -1)
+          fi
+          echo "Detected chart directory: ${chart_dir}"
+          echo "chart_dir=${chart_dir}" >> "$GITHUB_OUTPUT"
+      - name: Run values-sync dry-run
+        id: values_sync_dry_run
+        run: |
+          config_args=()
+          if [[ -f "values-sync-ignore.yaml" ]]; then
+            config_args+=(--config /github/workspace/values-sync-ignore.yaml)
+          fi
+          new_values=$(docker run --rm \
+            -v ${{ github.workspace }}:/github/workspace \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.3 \
+            --add-new --dry-run --depth 2 \
+            --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
+            "${config_args[@]}" || true)
+          echo "${new_values}"
+          if [[ -n "${new_values}" ]]; then
+            delimiter=$(openssl rand -hex 16)
+            {
+              echo "new_values<<${delimiter}"
+              printf '%s\n' "${new_values}"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - name: Run values-sync
+        run: |
+          config_args=()
+          if [[ -f "values-sync-ignore.yaml" ]]; then
+            config_args+=(--config /github/workspace/values-sync-ignore.yaml)
+          fi
+          docker run --rm \
+            -v ${{ github.workspace }}:/github/workspace \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.3 \
+            --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
+            "${config_args[@]}"
+      - name: Run schema-gen
+        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.3
+        with:
+          args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
+      - name: Detect dependency version changes
+        id: detect
+        run: |
+          set -euxo pipefail
+
+          CHART_YAML="${{ steps.chart.outputs.chart_dir }}/Chart.yaml"
+          deps=$(awk '
+            /^dependencies:/ { in_deps=1; next }
+            in_deps && /^[^[:space:]]/ { in_deps=0 }
+            in_deps && /name:/ { print $NF }
+          ' "${CHART_YAML}")
+
+          entries_file=$(mktemp)
+          while IFS= read -r dep; do
+            subchart="${{ steps.chart.outputs.chart_dir }}/charts/${dep}/Chart.yaml"
+            if [[ ! -f "${subchart}" ]]; then
+              echo "warning: ${subchart} not found, skipping ${dep}" >&2
+              continue
+            fi
+
+            new_version=$(grep -E "^appVersion:" "${subchart}" | awk '{print $NF}' || true)
+            old_version=$(git show origin/main:"${subchart}" 2>/dev/null \
+              | grep -E "^appVersion:" | awk '{print $NF}' || true)
+
+            if [[ "${old_version}" == "${new_version}" ]]; then
+              echo "No version change for ${dep} (${new_version}), skipping"
+              continue
+            fi
+
+            [[ "${new_version}" != v* ]] && new_version="v${new_version}"
+            echo "- Updated \`${dep}\` to upstream version \`${new_version}\`." >> "${entries_file}"
+          done <<< "${deps}"
+
+          echo "entries_file=${entries_file}" >> "$GITHUB_OUTPUT"
+      - name: Run changelogger
+        id: changelogger
+        run: |
+          set -euo pipefail
+
+          entries_file="${{ steps.detect.outputs.entries_file }}"
+          args=()
+          entries=""
+          while IFS= read -r entry; do
+            args+=(--add-changed "${entry}")
+            entries="${entries}${entry}"$'\n'
+          done < "${entries_file}"
+
+          if [[ ${#args[@]} -gt 0 ]]; then
+            docker run --rm \
+              -v ${{ github.workspace }}:/workspace \
+              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.3 \
+              --changelog-path /workspace/CHANGELOG.md \
+              "${args[@]}"
+          fi
+
+          if [[ -n "${entries}" ]]; then
+            delimiter=$(openssl rand -hex 16)
+            {
+              echo "entries<<${delimiter}"
+              printf '%s' "${entries}"
+              echo "${delimiter}"
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - name: Commit and push
+        run: |
+          git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
+          git config --local user.name "HeraldBot[bot]"
+          git add ${{ steps.chart.outputs.chart_dir }}/values.yaml ${{ steps.chart.outputs.chart_dir }}/values.schema.json CHANGELOG.md
+          git diff --cached --quiet || git commit -m "Sync values, schema and changelog from upstream"
+          git push origin ${{ inputs.update_branch }}
+
+  update-pr-description:
+    runs-on: ubuntu-24.04
+    needs: sync-and-update
+    if: needs.sync-and-update.outputs.entries != '' || needs.sync-and-update.outputs.new_values != ''
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2.2.1
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+      - name: Update PR description
+        env:
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          ENTRIES: ${{ needs.sync-and-update.outputs.entries }}
+          NEW_VALUES: ${{ needs.sync-and-update.outputs.new_values }}
+        run: |
+          body=""
+          if [[ -n "${ENTRIES}" ]]; then
+            body+="$(printf '### Changes\n\n%s\n' "${ENTRIES}")"
+          fi
+          if [[ -n "${NEW_VALUES}" ]]; then
+            body+="$(printf '\n### New values\n\n```yaml\n%s\n```\n' "${NEW_VALUES}")"
+          fi
+          gh pr edit '${{ inputs.update_branch }}' \
+            --repo ${{ github.repository }} \
+            --body "${body}"
