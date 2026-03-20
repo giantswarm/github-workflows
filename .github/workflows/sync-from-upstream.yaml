@@ -99,8 +99,8 @@ jobs:
           fi
           new_values=$(docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.3 \
-            --add-new --dry-run --depth 2 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.4 \
+            --show-git-diff \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}" || true)
           echo "${new_values}"
@@ -120,11 +120,11 @@ jobs:
           fi
           docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.3 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.4 \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}"
       - name: Run schema-gen
-        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.3
+        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.4
         with:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
@@ -177,7 +177,7 @@ jobs:
           if [[ ${#args[@]} -gt 0 ]]; then
             docker run --rm \
               -v ${{ github.workspace }}:/workspace \
-              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.3 \
+              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.4 \
               --changelog-path /workspace/CHANGELOG.md \
               "${args[@]}"
           fi
