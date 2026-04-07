@@ -40,12 +40,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git fetch origin
-          git checkout main
-          git checkout -B "${{ inputs.update_branch }}"
+
+          # Use the existing remote branch if present; otherwise create from main
+          if git ls-remote --exit-code --heads origin "${{ inputs.update_branch }}" > /dev/null 2>&1; then
+            git checkout --track "origin/${{ inputs.update_branch }}"
+          else
+            git checkout main
+            git checkout -b "${{ inputs.update_branch }}"
+          fi
+
           git checkout "origin/${{ github.ref_name }}" -- vendir.yml
           git add vendir.yml
-          git commit -m "Update vendir.yml from upstream"
-          git push origin "${{ inputs.update_branch }}" --force
+          git diff --cached --quiet || git commit -m "Update vendir.yml from upstream"
+          git push origin "${{ inputs.update_branch }}"
 
   call-update-chart:
     needs: prepare-update-branch
