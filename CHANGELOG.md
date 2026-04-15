@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-04-15
+
+### Added
+
+- Add a new `dispatch-update-chart-events` action to send `update-chart` events to a central repository.
+
 ## 2026-03-05
 
 ### Added
