@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-04-17
+
+### Changed
+
+- Bump `giantswarm/install-binary-action` from `v4.0.0` to `v4.0.1` in `create-release`, `create-release-pr`, and `helm-render-diff` workflows to pick up the fix for the `mkdir: File exists` collision in pre-commit runs (see `giantswarm/install-binary-action#334`).
+
 ## 2026-04-15
 
 ### Added
