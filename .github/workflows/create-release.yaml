@@ -314,7 +314,10 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ env.TAG }}
-          fetch-depth: ${{ inputs.fetch-deep-gitlog-for-build && 0 || 1 }}
+          # Strings ('0' / '1') are required because the GHA ternary idiom
+          # `cond && A || B` only works when A is truthy. The number `0`
+          # is falsy, so `cond && 0 || 1` always evaluates to `1`.
+          fetch-depth: ${{ inputs.fetch-deep-gitlog-for-build && '0' || '1' }}
       - name: Create ${{ matrix.platform }} package
         run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform
