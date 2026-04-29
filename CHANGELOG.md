@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-04-29
+
+### Changed
+
+- `chart-values` workflow: replace `yajsv` with `helm template` (charts without dependencies) and `jv` (charts with dependencies); validate against every `ci/*.yaml` and `ci/*.yml` file instead of only `ci/ci-values.yaml`.
+
 ## 2026-04-24
 
 - Fix interpretation of `fetch-deep-gitlog-for-build` input in `crteate-release` workflow, to allow for fetching git log.
