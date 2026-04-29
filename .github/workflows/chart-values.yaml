@@ -5,6 +5,9 @@ on:
 
 permissions: {}
 
+env:
+  helm_ver: "3.11.1"
+
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -14,31 +17,95 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install validator
+      - name: Classify charts by validation strategy
+        id: classify
         run: |
-          wget -q -O ${HOME}/yajsv https://github.com/neilpa/yajsv/releases/download/v1.4.1/yajsv.linux.amd64
-          chmod +x ${HOME}/yajsv
+          shopt -s nullglob
+          helm_charts=()
+          jv_charts=()
 
-      - name: Check if values.yaml is a valid instance of values.schema.json
-        run: |
           for chart_yaml in helm/*/Chart.yaml; do
             helm_dir="${chart_yaml%/Chart.yaml}"
 
-            if [ ! -f ${helm_dir}/values.schema.json ]; then
-              echo "Skipping validation for '${helm_dir}' folder, because 'values.schema.json' does not exist..."
+            # Skip charts without a values.schema.json — there is nothing to validate against.
+            if [ ! -f "${helm_dir}/values.schema.json" ]; then
+              echo "Skipping '${helm_dir}': 'values.schema.json' does not exist."
               continue
             fi
 
-            values=${helm_dir}/values.yaml
-            if [ -f ${helm_dir}/ci/ci-values.yaml ]; then
-              # merge ci-values.yaml into values.yaml (providing required values)
-              echo -e "\nMerged values:\n=============="
-              yq '. *= load("'${helm_dir}'/ci/ci-values.yaml")' ${helm_dir}/values.yaml | tee ${helm_dir}/combined-values.yaml
-              echo -e "\n==============\n"
-              values=${helm_dir}/combined-values.yaml
+            # Charts that declare subchart dependencies cannot be rendered with `helm template`
+            # without first fetching them, so they take the jv schema-only path instead.
+            has_deps=$(yq '.dependencies | length' "${chart_yaml}")
+            if [ "${has_deps:-0}" -eq 0 ]; then
+              helm_charts+=("${helm_dir}")
+            else
+              jv_charts+=("${helm_dir}")
             fi
+          done
 
-            ${HOME}/yajsv -s ${helm_dir}/values.schema.json ${values}
+          echo "helm_charts=${helm_charts[*]}" >> "${GITHUB_OUTPUT}"
+          echo "jv_charts=${jv_charts[*]}" >> "${GITHUB_OUTPUT}"
+
+          echo "Charts to validate with helm template: ${helm_charts[*]:-<none>}"
+          echo "Charts to validate with jv:            ${jv_charts[*]:-<none>}"
+
+      - name: Install Helm
+        if: steps.classify.outputs.helm_charts != ''
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        with:
+          version: ${{ env.helm_ver }}
+
+      - name: Install jv (JSON Schema validator)
+        if: steps.classify.outputs.jv_charts != ''
+        run: |
+          go install github.com/santhosh-tekuri/jsonschema/cmd/jv@v0.7.0
+          echo "${HOME}/go/bin" >> "${GITHUB_PATH}"
+
+      - name: Validate charts without dependencies (helm template)
+        if: steps.classify.outputs.helm_charts != ''
+        env:
+          HELM_CHARTS: ${{ steps.classify.outputs.helm_charts }}
+        run: |
+          shopt -s nullglob
+          for helm_dir in ${HELM_CHARTS}; do
+            ci_files=( "${helm_dir}"/ci/*.yaml "${helm_dir}"/ci/*.yml )
+            if [ ${#ci_files[@]} -eq 0 ]; then
+              # No ci overrides: validate values.yaml on its own.
+              echo "Validating ${helm_dir}/values.yaml"
+              helm template test "${helm_dir}" -f "${helm_dir}/values.yaml" > /dev/null
+            else
+              # Validate values.yaml merged with each ci override. Helm merges -f files in order.
+              for ci_file in "${ci_files[@]}"; do
+                echo "Validating ${helm_dir}/values.yaml + ${ci_file}"
+                helm template test "${helm_dir}" \
+                  -f "${helm_dir}/values.yaml" \
+                  -f "${ci_file}" > /dev/null
+              done
+            fi
+          done
+
+      - name: Validate charts with dependencies (jv)
+        if: steps.classify.outputs.jv_charts != ''
+        env:
+          JV_CHARTS: ${{ steps.classify.outputs.jv_charts }}
+        run: |
+          shopt -s nullglob
+          for helm_dir in ${JV_CHARTS}; do
+            ci_files=( "${helm_dir}"/ci/*.yaml "${helm_dir}"/ci/*.yml )
+            if [ ${#ci_files[@]} -eq 0 ]; then
+              # No ci overrides: validate values.yaml directly against the schema.
+              echo "Validating ${helm_dir}/values.yaml against ${helm_dir}/values.schema.json"
+              jv "${helm_dir}/values.schema.json" "${helm_dir}/values.yaml"
+            else
+              # Merge values.yaml with each ci override using yq, then validate the merged file with jv.
+              for ci_file in "${ci_files[@]}"; do
+                echo "Validating ${helm_dir}/values.yaml + ${ci_file} against ${helm_dir}/values.schema.json"
+                merged=$(mktemp --suffix=.yaml)
+                ci_path="${ci_file}" yq '. *= load(strenv(ci_path))' "${helm_dir}/values.yaml" > "${merged}"
+                jv "${helm_dir}/values.schema.json" "${merged}"
+                rm -f "${merged}"
+              done
+            fi
           done
