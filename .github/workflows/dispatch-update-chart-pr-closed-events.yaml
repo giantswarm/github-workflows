@@ -1,0 +1,46 @@
+name: Dispatch update-chart PR closure events to central repository
+
+on:
+  workflow_call:
+    inputs:
+      target_repository:
+        description: Repository to dispatch the events to, should be inside the giantswarm organization
+        required: true
+        type: string
+    secrets:
+      HERALD_APP_ID:
+        description: App ID for create-github-app-token
+        required: true
+      HERALD_APP_KEY:
+        description: Private key for create-github-app-token
+        required: true
+
+permissions: {}
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        with:
+          app-id: ${{ secrets.HERALD_APP_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+          owner: giantswarm
+          repositories: ${{ inputs.target_repository }}
+
+      - name: Dispatch PR closure to central repository
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          repository: giantswarm/${{ inputs.target_repository }}
+          event-type: update-chart-pr-closed
+          client-payload: |
+            {
+              "repo": "${{ github.repository }}",
+              "pr_number": ${{ github.event.pull_request.number }},
+              "merged": ${{ github.event.pull_request.merged }},
+              "head_sha": "${{ github.event.pull_request.head.sha }}",
+              "merge_commit_sha": "${{ github.event.pull_request.merge_commit_sha }}"
+            }
