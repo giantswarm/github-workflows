@@ -13,8 +13,8 @@ on:
         type: number
         default: 20
     secrets:
-      HERALD_CLIENT_ID:
-        description: Client ID for create-github-app-token
+      HERALD_APP_ID:
+        description: App ID for create-github-app-token
         required: true
       HERALD_APP_KEY:
         description: Private key for create-github-app-token
@@ -35,7 +35,7 @@ jobs:
         id: generate-token
         uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
         with:
-          client-id: ${{ secrets.HERALD_CLIENT_ID }}
+          app-id: ${{ secrets.HERALD_APP_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
           owner: giantswarm
           repositories: ${{ inputs.target_repository }}

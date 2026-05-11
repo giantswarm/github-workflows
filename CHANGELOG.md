@@ -8,9 +8,7 @@ Instead this file uses a date-based structure.
 
 ## 2026-05-07
 
-### Changed
-
-- Change actions/create-github-app-token param `app-id` to `client-id`.
+- Change actions/create-github-app-token param `app-id` to `client-id` in fix-vulnerabilities workflow.
 
 ## 2026-04-24
 
