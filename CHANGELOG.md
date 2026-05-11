@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-11
+
+### Fixed
+
+- Renamed `HERALD_CLIENT_ID` to `HERALD_APP_ID` in fix-vulnerabilities workflow to avoid a missing secret scenario in devctl generated files.
+
 ## 2026-05-07
 
 ### Changed
