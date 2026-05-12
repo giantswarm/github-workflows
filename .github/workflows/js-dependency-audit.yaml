@@ -1,0 +1,483 @@
+# Runs an audit against the JS dependencies of the calling repository on both
+# the PR head and the PR base, then posts a sticky PR comment summarizing
+# vulnerabilities and highlighting which ones the PR adds or removes.
+#
+# Auto-discovers every directory that contains a package.json with a recognized
+# lockfile (pnpm-lock.yaml, yarn.lock, package-lock.json, npm-shrinkwrap.json)
+# and picks the right audit command per project. The job never fails on
+# vulnerabilities — the signal is the comment.
+#
+# Recommended caller invocation: filter the trigger to dependency-relevant
+# files so the audit doesn't run on every PR. Example:
+#
+#   on:
+#     pull_request:
+#       paths:
+#         - '**/package.json'
+#         - '**/package-lock.json'
+#         - '**/npm-shrinkwrap.json'
+#         - '**/yarn.lock'
+#         - '**/.yarnrc'
+#         - '**/.yarnrc.yml'
+#         - '**/pnpm-lock.yaml'
+#         - '**/pnpm-workspace.yaml'
+#   jobs:
+#     audit:
+#       uses: giantswarm/github-workflows/.github/workflows/js-dependency-audit.yaml@main
+
+name: JS Dependency Audit
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Optional path to a single JS project to audit. When empty, the workflow auto-discovers every directory with a package.json and a recognized lockfile."
+        type: string
+        default: ""
+      node_version:
+        description: "Node.js version used to run the audit."
+        type: string
+        default: "24"
+
+permissions: {}
+
+jobs:
+  js-dependency-audit:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Write audit helper
+        # The helper is written once to /tmp and invoked twice (once per ref).
+        # It auto-discovers JS projects in the current working directory,
+        # detects each project's package manager from its lockfile, runs the
+        # corresponding audit, and appends one NDJSON record per project to
+        # the output file given as $1.
+        run: |
+          cat > /tmp/audit.sh <<'BASH_EOF'
+          #!/bin/bash
+          set -o pipefail
+
+          OUTPUT_FILE="$1"
+          : > "${OUTPUT_FILE}"
+
+          discover_projects() {
+            if [ -n "${WORKING_DIRECTORY:-}" ]; then
+              if [ -f "${WORKING_DIRECTORY}/package.json" ]; then
+                printf '%s\n' "${WORKING_DIRECTORY}"
+              else
+                echo "configured working_directory '${WORKING_DIRECTORY}' has no package.json" >&2
+              fi
+              return
+            fi
+            find . -name package.json \
+              -not -path '*/node_modules/*' \
+              -not -path './_base_audit_ref/*' \
+              -print0 \
+              | xargs -0 -n1 dirname \
+              | sort -u
+          }
+
+          detect_pm() {
+            local dir="$1"
+            if [ -f "${dir}/pnpm-lock.yaml" ]; then
+              echo "pnpm"
+              return
+            fi
+            if [ -f "${dir}/yarn.lock" ]; then
+              local pm
+              pm="$(jq -r '.packageManager // ""' "${dir}/package.json" 2>/dev/null || true)"
+              if [ -f "${dir}/.yarnrc.yml" ] || [[ "${pm}" =~ ^yarn@[2-9] ]]; then
+                echo "yarn-berry"
+              else
+                echo "yarn-classic"
+              fi
+              return
+            fi
+            if [ -f "${dir}/package-lock.json" ] || [ -f "${dir}/npm-shrinkwrap.json" ]; then
+              echo "npm"
+              return
+            fi
+            echo ""
+          }
+
+          run_audit() {
+            local dir="$1"
+            local pm="$2"
+            local raw="$3"
+            local err="$4"
+            # None of these commands need node_modules — they all read from the
+            # lockfile and query the registry directly. Skipping install keeps
+            # large monorepo audits down from minutes to seconds.
+            case "${pm}" in
+              npm)
+                (cd "${dir}" && npm audit --json) > "${raw}" 2> "${err}" || true
+                ;;
+              pnpm)
+                (cd "${dir}" && pnpm audit --json) > "${raw}" 2> "${err}" || true
+                ;;
+              yarn-berry)
+                (cd "${dir}" && yarn npm audit --all --recursive --json) > "${raw}" 2> "${err}" || true
+                ;;
+              yarn-classic)
+                (cd "${dir}" && yarn audit --json --groups dependencies,devDependencies) > "${raw}" 2> "${err}" || true
+                ;;
+            esac
+          }
+
+          mapfile -t PROJECTS < <(discover_projects)
+          echo "Discovered ${#PROJECTS[@]} project(s):"
+          if [ "${#PROJECTS[@]}" -eq 0 ]; then
+            echo "  (none)"
+          else
+            printf '  %s\n' "${PROJECTS[@]}"
+          fi
+
+          for proj in "${PROJECTS[@]:-}"; do
+            [ -z "${proj}" ] && continue
+            pm="$(detect_pm "${proj}")"
+            if [ -z "${pm}" ]; then
+              echo "Skipping ${proj}: no recognized lockfile"
+              jq -nc --arg proj "${proj}" \
+                '{__project__: $proj, __pm__: "unknown", __skipped__: "no recognized lockfile"}' \
+                >> "${OUTPUT_FILE}"
+              continue
+            fi
+            echo "Auditing ${proj} (manager: ${pm})"
+            raw="$(mktemp)"
+            err="$(mktemp)"
+            run_audit "${proj}" "${pm}" "${raw}" "${err}"
+
+            if [ ! -s "${raw}" ]; then
+              jq -nc --arg proj "${proj}" --arg pm "${pm}" --rawfile err "${err}" \
+                '{__project__: $proj, __pm__: $pm, __error__: ("audit produced no output: " + ($err | .[0:500]))}' \
+                >> "${OUTPUT_FILE}"
+              rm -f "${raw}" "${err}"
+              continue
+            fi
+
+            case "${pm}" in
+              yarn-berry|yarn-classic)
+                if ! jq -sc --arg proj "${proj}" --arg pm "${pm}" \
+                    '{__project__: $proj, __pm__: $pm, __data__: .}' "${raw}" \
+                    >> "${OUTPUT_FILE}" 2>/dev/null; then
+                  jq -nc --arg proj "${proj}" --arg pm "${pm}" --rawfile raw "${raw}" \
+                    '{__project__: $proj, __pm__: $pm, __error__: ("could not parse NDJSON: " + ($raw | .[0:500]))}' \
+                    >> "${OUTPUT_FILE}"
+                fi
+                ;;
+              npm|pnpm)
+                if ! jq -c --arg proj "${proj}" --arg pm "${pm}" \
+                    '{__project__: $proj, __pm__: $pm, __data__: .}' "${raw}" \
+                    >> "${OUTPUT_FILE}" 2>/dev/null; then
+                  jq -nc --arg proj "${proj}" --arg pm "${pm}" --rawfile raw "${raw}" \
+                    '{__project__: $proj, __pm__: $pm, __error__: ("could not parse JSON: " + ($raw | .[0:500]))}' \
+                    >> "${OUTPUT_FILE}"
+                fi
+                ;;
+            esac
+            rm -f "${raw}" "${err}"
+          done
+
+          echo "Wrote $(wc -l < "${OUTPUT_FILE}") record(s) to ${OUTPUT_FILE}"
+          BASH_EOF
+          chmod +x /tmp/audit.sh
+
+      - name: Checkout PR head
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Checkout base branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: _base_audit_ref
+          persist-credentials: false
+
+      - name: Audit PR head
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: /tmp/audit.sh /tmp/audit-head.ndjson
+
+      - name: Audit base branch
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        working-directory: ./_base_audit_ref
+        run: /tmp/audit.sh /tmp/audit-base.ndjson
+
+      - name: Build comment body
+        id: build_comment
+        shell: python {0}
+        run: |
+          import json
+          import os
+
+          SEVERITY_ORDER = {"critical": 0, "high": 1, "moderate": 2, "low": 3, "info": 4, "unknown": 5}
+          SEVERITY_ICON = {
+              "critical": "🔴",
+              "high": "🟠",
+              "moderate": "🟡",
+              "low": "🔵",
+              "info": "⚪",
+              "unknown": "❓",
+          }
+          MARKER = "<!-- js-dependency-audit-summary -->"
+
+
+          def parse_npm(project, data):
+              # npm v7+: { vulnerabilities: { pkgName: { severity, via: [advisory...] } } }
+              if not isinstance(data, dict):
+                  return
+              for pkg, info in (data.get("vulnerabilities") or {}).items():
+                  for via in info.get("via") or []:
+                      if not isinstance(via, dict):
+                          continue
+                      source = via.get("source")
+                      advisory_id = str(source) if source is not None else (via.get("url") or via.get("title") or "")
+                      yield {
+                          "project": project,
+                          "package": via.get("name") or pkg,
+                          "advisory_id": advisory_id,
+                          "severity": (via.get("severity") or info.get("severity") or "unknown").lower(),
+                          "title": via.get("title") or "",
+                          "url": via.get("url") or "",
+                          "range": via.get("range") or "",
+                      }
+
+
+          def parse_pnpm(project, data):
+              # pnpm emits one of two shapes depending on version:
+              #   old:    { advisories: { id: {...} } }
+              #   newer:  { vulnerabilities: { ... } }  (same as npm v7)
+              if not isinstance(data, dict):
+                  return
+              if data.get("advisories"):
+                  for adv_id, adv in data["advisories"].items():
+                      yield {
+                          "project": project,
+                          "package": adv.get("module_name") or "",
+                          "advisory_id": str(adv.get("id") or adv_id),
+                          "severity": (adv.get("severity") or "unknown").lower(),
+                          "title": adv.get("title") or "",
+                          "url": adv.get("url") or "",
+                          "range": adv.get("vulnerable_versions") or "",
+                      }
+                  return
+              if "vulnerabilities" in data:
+                  yield from parse_npm(project, data)
+                  return
+              print(f"  warning: pnpm output for {project} had no advisories or vulnerabilities key")
+
+
+          def parse_yarn_berry(project, lines):
+              # NDJSON: { value: pkgName, children: { ID, Issue, URL, Severity, "Vulnerable Versions" } }
+              for line in lines or []:
+                  if not isinstance(line, dict):
+                      continue
+                  children = line.get("children") or {}
+                  if "ID" not in children:
+                      continue
+                  yield {
+                      "project": project,
+                      "package": line.get("value") or "",
+                      "advisory_id": str(children.get("ID") or ""),
+                      "severity": (children.get("Severity") or "unknown").lower(),
+                      "title": children.get("Issue") or "",
+                      "url": children.get("URL") or "",
+                      "range": children.get("Vulnerable Versions") or "",
+                  }
+
+
+          def parse_yarn_classic(project, lines):
+              # NDJSON: { type: "auditAdvisory", data: { advisory: {...} } }
+              for line in lines or []:
+                  if not isinstance(line, dict):
+                      continue
+                  if line.get("type") != "auditAdvisory":
+                      continue
+                  adv = (line.get("data") or {}).get("advisory") or {}
+                  yield {
+                      "project": project,
+                      "package": adv.get("module_name") or "",
+                      "advisory_id": str(adv.get("id") or ""),
+                      "severity": (adv.get("severity") or "unknown").lower(),
+                      "title": adv.get("title") or "",
+                      "url": adv.get("url") or "",
+                      "range": adv.get("vulnerable_versions") or "",
+                  }
+
+
+          PARSERS = {
+              "npm": parse_npm,
+              "pnpm": parse_pnpm,
+              "yarn-berry": parse_yarn_berry,
+              "yarn-classic": parse_yarn_classic,
+          }
+
+
+          def load_records(path):
+              findings = {}
+              status = {}
+              if not os.path.exists(path):
+                  return findings, status
+              with open(path) as fh:
+                  for line in fh:
+                      line = line.strip()
+                      if not line:
+                          continue
+                      try:
+                          rec = json.loads(line)
+                      except json.JSONDecodeError:
+                          continue
+                      project = rec.get("__project__") or "?"
+                      pm = rec.get("__pm__") or "unknown"
+                      status[project] = {
+                          "pm": pm,
+                          "error": rec.get("__error__"),
+                          "skipped": rec.get("__skipped__"),
+                      }
+                      if rec.get("__error__") or rec.get("__skipped__"):
+                          continue
+                      parser = PARSERS.get(pm)
+                      if not parser:
+                          continue
+                      for f in parser(project, rec.get("__data__")):
+                          # Dedupe — same finding may surface multiple times via workspaces / dep paths.
+                          findings[(f["project"], f["package"], f["advisory_id"])] = f
+              return findings, status
+
+
+          head, head_status = load_records("/tmp/audit-head.ndjson")
+          base, base_status = load_records("/tmp/audit-base.ndjson")
+
+          added_keys = sorted(
+              set(head) - set(base),
+              key=lambda k: (SEVERITY_ORDER.get(head[k]["severity"], 99), k),
+          )
+          removed_keys = sorted(
+              set(base) - set(head),
+              key=lambda k: (SEVERITY_ORDER.get(base[k]["severity"], 99), k),
+          )
+
+
+          def fmt(f):
+              icon = SEVERITY_ICON.get(f["severity"], "❓")
+              parts = [f"{icon} **{f['severity']}**", f"`{f['package']}`"]
+              if f["range"]:
+                  parts.append(f"({f['range']})")
+              if f["title"]:
+                  parts.append("— " + f["title"])
+              if f["url"]:
+                  parts.append(f"[advisory]({f['url']})")
+              prefix = f"`{f['project']}` " if f["project"] not in (".", "?") else ""
+              return "- " + prefix + " ".join(parts)
+
+
+          has_anything = bool(head_status or base_status)
+          if not has_anything:
+              with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+                  fh.write("has_findings=false\n")
+              print("No JS projects found on either branch — skipping PR comment.")
+              raise SystemExit(0)
+
+          delta = len(head) - len(base)
+          delta_str = f"+{delta}" if delta > 0 else str(delta)
+
+          lines = [MARKER, "", "## JS Dependency Audit", ""]
+          lines.append(
+              f"**{len(added_keys)} added · {len(removed_keys)} removed · "
+              f"{len(head)} total ({delta_str} vs base)**"
+          )
+          lines.append("")
+
+          all_projects = sorted(set(head_status) | set(base_status))
+          if all_projects:
+              lines.append("<details><summary>Projects audited</summary>")
+              lines.append("")
+              for p in all_projects:
+                  hs = head_status.get(p, {})
+                  bs = base_status.get(p, {})
+                  pm = hs.get("pm") or bs.get("pm") or "unknown"
+                  note = ""
+                  if hs.get("error"):
+                      note = f" — ⚠️ error on PR head: {hs['error'][:200]}"
+                  elif hs.get("skipped"):
+                      note = f" — skipped on PR head: {hs['skipped']}"
+                  elif p not in head_status:
+                      note = " — removed in this PR"
+                  elif p not in base_status:
+                      note = " — added in this PR"
+                  lines.append(f"- `{p}` (manager: {pm}){note}")
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          if added_keys:
+              lines.append(f"### Added by this PR ({len(added_keys)})")
+              lines.append("")
+              lines.extend(fmt(head[k]) for k in added_keys)
+              lines.append("")
+
+          if removed_keys:
+              lines.append(f"### Removed by this PR ({len(removed_keys)})")
+              lines.append("")
+              lines.extend(fmt(base[k]) for k in removed_keys)
+              lines.append("")
+
+          if not added_keys and not removed_keys:
+              lines.append("No change in vulnerabilities compared to the base branch.")
+              lines.append("")
+
+          if head:
+              lines.append(f"<details><summary>Full current vulnerability list ({len(head)})</summary>")
+              lines.append("")
+              for key in sorted(head, key=lambda k: (SEVERITY_ORDER.get(head[k]["severity"], 99), k)):
+                  lines.append(fmt(head[key]))
+              lines.append("")
+              lines.append("</details>")
+              lines.append("")
+
+          with open("/tmp/comment-body", "w") as fh:
+              fh.write("\n".join(lines) + "\n")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write("has_findings=true\n")
+
+      - name: Find previous comment
+        if: steps.build_comment.outputs.has_findings == 'true'
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        continue-on-error: true
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- js-dependency-audit-summary -->'
+
+      - name: Delete previous comment
+        if: steps.build_comment.outputs.has_findings == 'true' && steps.fc.outputs.comment-id != 0
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_ID: ${{ steps.fc.outputs.comment-id }}
+          REPO: ${{ github.repository }}
+        run: gh api -X DELETE "repos/${REPO}/issues/comments/${COMMENT_ID}"
+
+      - name: Create comment
+        if: steps.build_comment.outputs.has_findings == 'true'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: /tmp/comment-body
