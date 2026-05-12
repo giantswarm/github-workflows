@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-12
+
+### Added
+
+- Add reusable workflow `js-dependency-audit.yaml`. It runs an audit (`npm`, `pnpm`, `yarn npm audit`, or `yarn audit`) on every JS project in a PR's head and base, then posts a sticky PR comment summarizing vulnerabilities and highlighting which ones the PR adds or removes.
+
 ## 2026-05-11
 
 ### Fixed
