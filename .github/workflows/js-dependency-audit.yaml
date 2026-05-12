@@ -197,17 +197,34 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Audit PR head
-        env:
-          WORKING_DIRECTORY: ${{ inputs.working_directory }}
-        run: /tmp/audit.sh /tmp/audit-head.ndjson
-
       - name: Checkout base branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: _base_audit_ref
           persist-credentials: false
+
+      # Cache package-manager download caches across the two audits and across
+      # workflow runs. The main win is Yarn Berry, where `yarn install --immutable`
+      # fetches every package in the lockfile from the registry — caching cuts
+      # the second install (base ref) and any subsequent run with an unchanged
+      # lockfile from minutes down to seconds.
+      - name: Restore dependency caches
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            .yarn/cache
+            _base_audit_ref/.yarn/cache
+            ~/.yarn/berry/cache
+            ~/.local/share/pnpm/store
+          key: ${{ runner.os }}-js-audit-${{ hashFiles('**/yarn.lock', '**/package-lock.json', '**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-js-audit-
+
+      - name: Audit PR head
+        env:
+          WORKING_DIRECTORY: ${{ inputs.working_directory }}
+        run: /tmp/audit.sh /tmp/audit-head.ndjson
 
       - name: Audit base branch
         env:
