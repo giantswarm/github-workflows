@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- Add reusable workflow `js-dependency-audit.yaml`. It runs an audit (`npm`, `pnpm`, `yarn npm audit`, or `yarn audit`) on every JS project in a PR's head and base, then posts a sticky PR comment summarizing vulnerabilities and highlighting which ones the PR adds or removes. Caches package-manager download caches across runs to keep Yarn Berry installs fast.
+- Add reusable workflow `js-dependency-audit.yaml`. It runs an audit (`npm`, `pnpm`, `yarn npm audit`, or `yarn audit`) on every JS project in a PR's head and base, then posts a sticky PR comment summarizing vulnerabilities and highlighting which ones the PR adds or removes.
 
 ## 2026-05-11
 
