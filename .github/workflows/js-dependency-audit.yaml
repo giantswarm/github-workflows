@@ -132,7 +132,7 @@ jobs:
                 (cd "${dir}" && yarn npm audit --all --recursive --json) > "${raw}" 2> "${err}" || true
                 ;;
               yarn-classic)
-                (cd "${dir}" && yarn audit --json --groups dependencies,devDependencies) > "${raw}" 2> "${err}" || true
+                (cd "${dir}" && yarn audit --json) > "${raw}" 2> "${err}" || true
                 ;;
             esac
           }
