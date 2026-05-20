@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-20
+
+### Added
+
+- Add reusable workflow `semantic-pull-request.yaml`. Validates that a pull request title follows Conventional Commits, using `amannn/action-semantic-pull-request`'s default type set (sourced from [`commitizen/conventional-commit-types`](https://github.com/commitizen/conventional-commit-types): `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, `test`). Callers trigger it on `pull_request` with `types: [opened, edited, synchronize]`.
+
 ## 2026-05-19
 
 ### Changed
