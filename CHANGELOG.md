@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-19
+
+### Changed
+
+- Replace `mindsers/changelog-reader-action` with an inline `awk` extractor in the `create-release` workflow. The upstream action is unmaintained and still runs on Node 20, which is being deprecated by GitHub Actions on 2026-06-02 (see [giantswarm/giantswarm#36091](https://github.com/giantswarm/giantswarm/issues/36091)). Inline shell has no Node runtime, so the workflow is no longer exposed to future Node-deprecation cycles. The replacement was validated byte-for-byte against 128 historical release bodies produced by the action across 100 consumer repos.
+
 ## 2026-05-12
 
 ### Added
