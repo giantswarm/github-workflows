@@ -97,12 +97,12 @@ jobs:
       - gather_facts
     steps:
       - name: Install architect
-        uses: giantswarm/install-binary-action@952007edaee6637d91216e7001f79aff11e93228 # v4.0.1
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: "architect"
           version: "6.14.1"
       - name: Install semver
-        uses: giantswarm/install-binary-action@952007edaee6637d91216e7001f79aff11e93228 # v4.0.1
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: "semver"
           version: "3.2.0"
@@ -188,10 +188,37 @@ jobs:
           grep -qE "version[[:space:]]*=[[:space:]]*\"$version\"" $file
       - name: Get Changelog Entry
         id: changelog_reader
-        uses: mindsers/changelog-reader-action@32aa5b4c155d76c94e4ec883a223c947b2f02656  # v2.2.3
-        with:
-          version: ${{ needs.gather_facts.outputs.version }}
-          path: ./CHANGELOG.md
+        env:
+          VERSION: ${{ needs.gather_facts.outputs.version }}
+        run: |
+          set -euo pipefail
+          entry=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) { found = 1; next }
+            }
+            found {
+              if ($0 ~ /^\[[^]]+\]:[ \t]*https?:\/\//) next
+              if (!started && $0 ~ /^[[:space:]]*$/) next
+              started = 1
+              buf[++n] = $0
+            }
+            END {
+              while (n > 0 && buf[n] ~ /^[[:space:]]*$/) n--
+              for (i = 1; i <= n; i++) print buf[i]
+            }
+          ' ./CHANGELOG.md)
+
+          if [ -z "$(printf %s "$entry" | tr -d '[:space:]')" ]; then
+            echo "::error::No changelog entry found for version $VERSION in ./CHANGELOG.md"
+            exit 1
+          fi
+
+          {
+            echo "changes<<__GHA_EOF__"
+            printf '%s\n' "$entry"
+            echo "__GHA_EOF__"
+          } >> "$GITHUB_OUTPUT"
       - name: Set up git identity
         run: |
           git config --local user.email "dev@giantswarm.io"
@@ -224,7 +251,7 @@ jobs:
     if: ${{ needs.gather_facts.outputs.version }}
     steps:
       - name: Install semver
-        uses: giantswarm/install-binary-action@952007edaee6637d91216e7001f79aff11e93228 # v4.0.1
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: "semver"
           version: "3.0.0"
@@ -302,7 +329,7 @@ jobs:
       - gather_facts
     steps:
       - name: Install architect
-        uses: giantswarm/install-binary-action@952007edaee6637d91216e7001f79aff11e93228 # v4.0.1
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: "architect"
           version: "6.14.1"
