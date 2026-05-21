@@ -55,7 +55,7 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Enable auto-merge on release PR
+      - name: Auto-merge release PR
         if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-release != 'none' }}
         env:
           GITHUB_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
@@ -77,6 +77,8 @@ jobs:
           declare -A level=([patch]=1 [minor]=2 [major]=3)
           if [[ ${level[$bump]} -le ${level[$AUTO_RELEASE]} ]]; then
             echo "Enabling auto-merge on PR #${PR_NUMBER} (bump=${bump}, threshold=${AUTO_RELEASE})"
+            # Requires taylorbot on the repo's branch protection bypass list, or 1 manual
+            # approval. Full hands-off automation via a GitHub App is a follow-up.
             gh pr merge --auto --squash "$PR_NUMBER" \
               || echo "::warning::Auto-merge not allowed. Check branch protection settings."
           else
