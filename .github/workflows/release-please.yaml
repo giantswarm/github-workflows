@@ -2,11 +2,6 @@ name: Release Please
 
 on:
   workflow_call:
-    inputs:
-      auto-release:
-        description: "Automatically merge the Release Please PR when CI passes, up to this bump level. One of: none, patch, minor, major."
-        type: string
-        default: none
     secrets:
       TAYLORBOT_GITHUB_ACTION:
         required: true
@@ -54,33 +49,3 @@ jobs:
           token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-      - name: Auto-merge release PR
-        if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-release != 'none' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
-          PR_NUMBER: ${{ steps.release_please.outputs.pr }}
-          AUTO_RELEASE: ${{ inputs.auto-release }}
-        run: |
-          pr_labels=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
-
-          # Release Please labels its pending PR with "autorelease: minor" or
-          # "autorelease: major" when the bump exceeds patch. Default to patch
-          # when neither label is present.
-          bump=patch
-          if echo "$pr_labels" | grep -q "autorelease: major"; then
-            bump=major
-          elif echo "$pr_labels" | grep -q "autorelease: minor"; then
-            bump=minor
-          fi
-
-          declare -A level=([patch]=1 [minor]=2 [major]=3)
-          if [[ ${level[$bump]} -le ${level[$AUTO_RELEASE]} ]]; then
-            echo "Enabling auto-merge on PR #${PR_NUMBER} (bump=${bump}, threshold=${AUTO_RELEASE})"
-            # Requires taylorbot on the repo's branch protection bypass list, or 1 manual
-            # approval. Full hands-off automation via a GitHub App is a follow-up.
-            gh pr merge --auto --squash "$PR_NUMBER" \
-              || echo "::warning::Auto-merge not allowed. Check branch protection settings."
-          else
-            echo "Skipping auto-merge: bump=${bump} exceeds threshold=${AUTO_RELEASE}"
-          fi
