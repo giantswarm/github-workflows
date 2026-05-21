@@ -45,13 +45,17 @@ jobs:
           title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
           # Matches strings like:
           #
-          #   - "Release v1.2.3"
-          #   - "Release v1.2.3-r4"
-          #   - "Release v1.2.3 (#56)"
-          #   - "Release v1.2.3-r4 (#56)"
+          #   - "release: v1.2.3"
+          #   - "release: v1.2.3-r4"
+          #   - "release: v1.2.3 (#56)"
+          #   - "release: v1.2.3-r4 (#56)"
+          #
+          # The "Release v..." form (no colon) is also accepted for
+          # backward compatibility with PRs created by older versions
+          # of the create-release-pr workflow.
           #
           # And outputs version part (1.2.3).
-          if echo "${title}" | grep -iqE '^Release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+          if echo "${title}" | grep -iqE '^Release:? v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
           version=$(echo "${title}" | cut -d ' ' -f 2)
           fi
           version="${version#v}" # Strip "v" prefix.
@@ -76,7 +80,7 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
-          if echo "${title}" | grep -qE '^release v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
+          if echo "${title}" | grep -iqE '^release:? v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
             version=$(echo "${title}" | cut -d ' ' -f 2)
           fi
           version=$(echo "${title}" | cut -d ' ' -f 2)

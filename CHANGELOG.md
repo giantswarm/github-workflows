@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-21
+
+### Changed
+
+- `create-release-pr` now opens release PRs with a Conventional Commits-compatible title of the form `release: vX.Y.Z` (previously `Release vX.Y.Z`). The release commit message it creates uses the same form.
+- `create-release` and `update-action-version` accept both the new `release: vX.Y.Z` form and the legacy `Release vX.Y.Z` form, so in-flight release PRs created by older versions of `create-release-pr` continue to be picked up after their merge commit lands.
+
 ## 2026-05-20
 
 ### Added
