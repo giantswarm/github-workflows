@@ -1,8 +1,9 @@
 # This reusable workflow runs when a release PR is created and updates the
 # version in a composite action's action.yml to match the release version.
 #
-# It finds the open release PR (matching "Release v<semver>"), extracts the
-# version, and updates the specified action.yml file on the release branch.
+# It finds the open release PR (matching "chore(release): v<semver>" or the
+# legacy "Release v<semver>"), extracts the version, and updates the
+# specified action.yml file on the release branch.
 
 name: Update action version
 
@@ -39,8 +40,9 @@ jobs:
           # List open PRs
           prs=$(gh pr list --repo "${{ github.repository }}" --state open --json title,number,headRefName)
 
-          # Filter for release PRs matching "Release v<semver>"
-          release_prs=$(echo "$prs" | jq '[.[] | select(.title | test("^Release v[0-9]+\\.[0-9]+\\.[0-9]+"))]')
+          # Filter for release PRs matching "chore(release): v<semver>"
+          # (current format) or "Release v<semver>" (legacy format).
+          release_prs=$(echo "$prs" | jq '[.[] | select(.title | test("^(chore\\(release\\):|Release) v[0-9]+\\.[0-9]+\\.[0-9]+"; "i"))]')
 
           count=$(echo "$release_prs" | jq 'length')
           if [ "$count" -ne 1 ]; then
@@ -50,7 +52,7 @@ jobs:
 
           title=$(echo "$release_prs" | jq -r '.[0].title')
           branch=$(echo "$release_prs" | jq -r '.[0].headRefName')
-          version=$(echo "$title" | sed 's/^Release v//')
+          version=$(echo "$title" | sed -E 's/^(chore\(release\):|Release) v//')
 
           echo "Found release PR: $title"
           echo "Version: $version"
