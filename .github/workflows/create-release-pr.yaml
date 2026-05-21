@@ -168,7 +168,7 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "release: v${{ env.version }} - version packages" -m "Release-Workflow-Run: ${{ github.run_id }}"
+          git commit -m "chore(release): v${{ env.version }} - version packages" -m "Release-Workflow-Run: ${{ github.run_id }}"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
@@ -270,7 +270,7 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "release: v${{ env.version }}" -m "Release-Workflow-Run: ${{ github.run_id }}"
+          git commit -m "chore(release): v${{ env.version }}" -m "Release-Workflow-Run: ${{ github.run_id }}"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
@@ -282,4 +282,4 @@ jobs:
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          gh pr create --assignee ${{ github.actor }} --title "release: v${{ env.version }}" --body "" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"
+          gh pr create --assignee ${{ github.actor }} --title "chore(release): v${{ env.version }}" --body "" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"

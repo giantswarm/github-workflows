@@ -10,8 +10,8 @@ Instead this file uses a date-based structure.
 
 ### Changed
 
-- `create-release-pr` now opens release PRs with a Conventional Commits-compatible title of the form `release: vX.Y.Z` (previously `Release vX.Y.Z`). The release commit message it creates uses the same form.
-- `create-release` and `update-action-version` accept both the new `release: vX.Y.Z` form and the legacy `Release vX.Y.Z` form, so in-flight release PRs created by older versions of `create-release-pr` continue to be picked up after their merge commit lands.
+- `create-release-pr` now opens release PRs with a Conventional Commits-compatible title of the form `chore(release): vX.Y.Z` (previously `Release vX.Y.Z`). The release commit message it creates uses the same form.
+- `create-release` and `update-action-version` accept both the new `chore(release): vX.Y.Z` form and the legacy `Release vX.Y.Z` form, so in-flight release PRs created by older versions of `create-release-pr` continue to be picked up after their merge commit lands.
 
 ## 2026-05-20
 
