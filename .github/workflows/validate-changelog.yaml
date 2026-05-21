@@ -120,10 +120,27 @@ jobs:
 
           echo "Found changelog section for version $version"
 
-          # Check if there are any ### headers (Added, Changed, Deprecated, Removed, Fixed, Security)
-          subsection_count=$(echo "$changelog_section" | grep -c "^### " || true)
+          # Accepted Keep a Changelog H3 sections (https://keepachangelog.com/en/1.1.0/).
+          accepted_pattern='^### (Added|Changed|Deprecated|Removed|Fixed|Security)[[:space:]]*$'
 
-          if [ "$subsection_count" -eq 0 ]; then
+          all_headers=$(echo "$changelog_section" | grep -E "^### " || true)
+          accepted_headers=$(echo "$all_headers" | grep -E "$accepted_pattern" || true)
+          unknown_headers=$(echo "$all_headers" | grep -Ev "$accepted_pattern" || true)
+
+          accepted_count=0
+          if [ -n "$accepted_headers" ]; then
+            accepted_count=$(echo "$accepted_headers" | wc -l)
+          fi
+
+          if [ -n "$unknown_headers" ]; then
+            echo "::error title=Unknown Changelog Section::Found H3 headers that are not Keep a Changelog sections"
+            echo "::error::Allowed: ### Added, ### Changed, ### Deprecated, ### Removed, ### Fixed, ### Security"
+            echo "Unknown headers:"
+            echo "$unknown_headers" | sed 's/^/  /'
+            exit 1
+          fi
+
+          if [ "$accepted_count" -eq 0 ]; then
             echo "::error title=Empty Changelog::No changelog content found for version $version"
             echo "::error::The release appears to have an empty changelog."
             echo ""
@@ -138,11 +155,11 @@ jobs:
             echo "Current changelog section:"
             echo "$changelog_section"
             exit 1
-          else
-            echo "Changelog validation passed: Found $subsection_count section(s)"
-            echo "Sections found:"
-            echo "$changelog_section" | grep "^### " | sed 's/^/  /'
           fi
+
+          echo "Changelog validation passed: Found $accepted_count section(s)"
+          echo "Sections found:"
+          echo "$accepted_headers" | sed 's/^/  /'
 
       - name: Add PR comment if validation fails
         if: failure()
@@ -152,14 +169,14 @@ jobs:
             const version = '${{ steps.extract_version.outputs.version }}';
             const body = `## 📝 Changelog Validation Failed
 
-            The changelog for version **${version}** appears to be empty.
+            The changelog for version **${version}** is either empty or contains H3 sections that are not part of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-            Please add content under appropriate sections like:
+            Accepted H3 sections:
             - \`### Added\` - for new features
             - \`### Changed\` - for changes in existing functionality
-            - \`### Fixed\` - for any bug fixes
-            - \`### Removed\` - for now removed features
             - \`### Deprecated\` - for soon-to-be removed features
+            - \`### Removed\` - for now removed features
+            - \`### Fixed\` - for any bug fixes
             - \`### Security\` - in case of vulnerabilities
 
             **Example:**
@@ -170,9 +187,13 @@ jobs:
 
             - Updated dependency X to version Y
             - Improved error handling in module Z
+
+            ### Security
+
+            - Bump x/crypto to 0.42.0 for CVE-2026-XXXXX
             \`\`\`
 
-            This check will pass once you add proper changelog content.`;
+            See the job log for the exact validation error.`;
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,
