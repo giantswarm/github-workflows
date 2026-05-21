@@ -117,7 +117,7 @@ jobs:
       - name: Create update commit
         run: |
           git add -A
-          git commit -m "Automated update from upstream"
+          git commit -m "chore(chart): automated update from upstream"
       - name: Push changes
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
@@ -130,7 +130,7 @@ jobs:
           head: "${{ needs.gather_facts.outputs.branch }}"
         run: |
           gh pr create \
-            --title "Automated update from upstream" \
+            --title "chore(chart): automated update from upstream" \
             --label "automated-update" \
             --base "${{ env.base }}" \
             --head "${{ env.head }}" \
