@@ -1,0 +1,127 @@
+name: Release Please
+
+on:
+  workflow_call:
+    inputs:
+      changelog-style:
+        description: "Changelog section style. 'legacy' maps conventional commit types to ### Added/Changed/Fixed (preserves GS scraper compatibility). 'default' uses Release Please's Angular preset (### Features/Bug Fixes). Ignored when a release-please-config.json is already committed to the repo."
+        type: string
+        default: legacy
+      auto-release:
+        description: "Automatically merge the Release Please PR when CI passes, up to this bump level. One of: none, patch, minor, major."
+        type: string
+        default: none
+    secrets:
+      TAYLORBOT_GITHUB_ACTION:
+        required: true
+    outputs:
+      release_created:
+        description: "Set to 'true' if a release was created."
+        value: ${{ jobs.release_please.outputs.release_created }}
+      tag_name:
+        description: "Tag name of the created release, e.g. v1.2.3."
+        value: ${{ jobs.release_please.outputs.tag_name }}
+      major:
+        description: "Major version component of the created release."
+        value: ${{ jobs.release_please.outputs.major }}
+      minor:
+        description: "Minor version component of the created release."
+        value: ${{ jobs.release_please.outputs.minor }}
+      patch:
+        description: "Patch version component of the created release."
+        value: ${{ jobs.release_please.outputs.patch }}
+      pr:
+        description: "Release Please PR number (open when no release was created yet)."
+        value: ${{ jobs.release_please.outputs.pr }}
+
+permissions: {}
+
+jobs:
+  release_please:
+    name: Release Please
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release_please.outputs.release_created }}
+      tag_name: ${{ steps.release_please.outputs.tag_name }}
+      major: ${{ steps.release_please.outputs.major }}
+      minor: ${{ steps.release_please.outputs.minor }}
+      patch: ${{ steps.release_please.outputs.patch }}
+      pr: ${{ steps.release_please.outputs.pr }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare release-please config
+        id: config
+        env:
+          CHANGELOG_STYLE: ${{ inputs.changelog-style }}
+        run: |
+          config_file="release-please-config.json"
+          if [[ -f "$config_file" ]]; then
+            echo "Using existing $config_file"
+            echo "config_path=${config_file}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Generate a config with the requested changelog style.
+          if [[ "$CHANGELOG_STYLE" == "legacy" ]]; then
+            changelog_sections='[
+              {"type":"feat",     "section":"### Added"},
+              {"type":"fix",      "section":"### Fixed"},
+              {"type":"refactor", "section":"### Changed"},
+              {"type":"perf",     "section":"### Changed"},
+              {"type":"docs",     "section":"### Changed"},
+              {"type":"chore",    "section":"### Changed"},
+              {"type":"test",     "section":"### Changed"},
+              {"type":"build",    "section":"### Changed"},
+              {"type":"ci",       "section":"### Changed"}
+            ]'
+          else
+            changelog_sections='null'
+          fi
+
+          tmp_config="$(mktemp)"
+          if [[ "$changelog_sections" == "null" ]]; then
+            echo '{"release-type":"simple"}' > "$tmp_config"
+          else
+            jq -n --argjson sections "$changelog_sections" \
+              '{"release-type":"simple","changelog-sections":$sections}' > "$tmp_config"
+          fi
+
+          echo "config_path=${tmp_config}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Release Please
+        id: release_please
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          config-file: ${{ steps.config.outputs.config_path }}
+          manifest-file: .release-please-manifest.json
+
+      - name: Enable auto-merge on release PR
+        if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-release != 'none' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          PR_NUMBER: ${{ steps.release_please.outputs.pr }}
+          AUTO_RELEASE: ${{ inputs.auto-release }}
+        run: |
+          pr_labels=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
+
+          bump=patch
+          if echo "$pr_labels" | grep -q "autorelease: major"; then
+            bump=major
+          elif echo "$pr_labels" | grep -q "autorelease: minor"; then
+            bump=minor
+          fi
+
+          declare -A level=([patch]=1 [minor]=2 [major]=3)
+          if [[ ${level[$bump]} -le ${level[$AUTO_RELEASE]} ]]; then
+            echo "Enabling auto-merge on PR #${PR_NUMBER} (bump=${bump}, threshold=${AUTO_RELEASE})"
+            gh pr merge --auto --squash "$PR_NUMBER" \
+              || echo "::warning::Auto-merge not allowed. Check branch protection settings."
+          else
+            echo "Skipping auto-merge: bump=${bump} exceeds threshold=${AUTO_RELEASE}"
+          fi
