@@ -64,6 +64,9 @@ jobs:
         run: |
           pr_labels=$(gh pr view "$PR_NUMBER" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
 
+          # Release Please labels its pending PR with "autorelease: minor" or
+          # "autorelease: major" when the bump exceeds patch. Default to patch
+          # when neither label is present.
           bump=patch
           if echo "$pr_labels" | grep -q "autorelease: major"; then
             bump=major
