@@ -14,6 +14,8 @@ Instead this file uses a date-based structure.
 - `create-release-pr` now opens release PRs with a Conventional Commits-compatible title of the form `chore(release): vX.Y.Z` (previously `Release vX.Y.Z`). The release commit message it creates uses the same form.
 - `create-release` and `update-action-version` accept both the new `chore(release): vX.Y.Z` form and the legacy `Release vX.Y.Z` form, so in-flight release PRs created by older versions of `create-release-pr` continue to be picked up after their merge commit lands.
 - `validate-changelog.yaml` now validates the H3 sections of the version block against the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) set: `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed`, `### Security`. Unknown H3 sections fail validation. `### Security` is accepted for CVE fixes and vulnerability mitigations. Release CHANGELOGs that do not use `### Security` continue to pass.
+- `fix-vulnerabilities` now opens PRs with the Conventional Commits title `fix(nancy): remediate findings on <branch>` (previously `Remediate Nancy findings on <branch>`). The intermediate commit it creates uses `fix(nancy): remediate nancy findings`.
+- `update-chart` now opens PRs with the Conventional Commits title `chore(chart): automated update from upstream` (previously `Automated update from upstream`). The intermediate commit it creates uses the same form.
 
 ## 2026-05-20
 
