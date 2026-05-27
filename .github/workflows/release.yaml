@@ -79,7 +79,7 @@ jobs:
       # head branch vs. current version on the base branch), which is authoritative
       # regardless of how each caller configures its PR title.
       - name: Reconcile auto-merge on the Release Please PR
-        if: ${{ steps.release_please.outputs.pr != '' }}
+        if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-merge-level != 'none' }}
         env:
           GH_TOKEN: ${{ steps.generate_token.outputs.token }}
           GH_REPO: ${{ github.repository }}
@@ -132,8 +132,8 @@ jobs:
             want_merge=false
           fi
 
-          # Only mutate when the desired state differs from the current one, so the
-          # common case (no opt-in) is a no-op rather than a failing disable call.
+          # Only mutate when the desired state differs from the current one, to avoid
+          # redundant enable/disable calls (and the errors a redundant one can raise).
           enabled=$(gh pr view "$pr_number" --json autoMergeRequest --jq '.autoMergeRequest != null')
 
           if [ "$want_merge" = true ] && [ "$enabled" != true ]; then
@@ -144,7 +144,10 @@ jobs:
               || echo "::warning::Could not enable auto-merge on PR #${pr_number}. Check that 'Allow auto-merge' is enabled and the release-please App can bypass branch protection."
           elif [ "$want_merge" = false ] && [ "$enabled" = true ]; then
             echo "Disabling auto-merge on PR #${pr_number}"
-            gh pr merge "$pr_number" --disable-auto
+            # Soft-fail symmetrically with the enable path: a transient API error or a
+            # race shouldn't break the release run.
+            gh pr merge "$pr_number" --disable-auto \
+              || echo "::warning::Could not disable auto-merge on PR #${pr_number}."
           else
             echo "Auto-merge already in desired state (enabled=${enabled}, want=${want_merge}); nothing to do"
           fi
