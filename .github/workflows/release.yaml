@@ -7,6 +7,12 @@ name: Release
 
 on:
   workflow_call:
+    inputs:
+      auto-merge-level:
+        description: "Automatically merge the Release Please PR when CI passes, up to this bump level. One of: none, patch, minor, major."
+        type: string
+        required: false
+        default: none
     secrets:
       RELEASE_PLEASE_CLIENT_ID:
         description: Client ID for create-github-app-token
@@ -65,3 +71,77 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Reconcile auto-merge on the open Release Please PR every run. release-please
+      # keeps a single PR open and rewrites it as commits land, so its bump level can
+      # change over time; we enable or disable auto-merge to match the current bump.
+      # The bump is derived from .release-please-manifest.json (next version on the PR
+      # head branch vs. current version on the base branch), which is authoritative
+      # regardless of how each caller configures its PR title.
+      - name: Reconcile auto-merge on the Release Please PR
+        if: ${{ steps.release_please.outputs.pr != '' }}
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          AUTO_MERGE_LEVEL: ${{ inputs.auto-merge-level }}
+          PR_JSON: ${{ steps.release_please.outputs.pr }}
+        run: |
+          set -euo pipefail
+
+          level_num() {
+            case "$1" in
+              none)  echo 0 ;;
+              patch) echo 1 ;;
+              minor) echo 2 ;;
+              major) echo 3 ;;
+              *) echo "Invalid level '$1' (expected none, patch, minor or major)" >&2; exit 1 ;;
+            esac
+          }
+          # Fail fast on an invalid auto-merge-level input.
+          level_num "$AUTO_MERGE_LEVEL" >/dev/null
+
+          pr_number=$(jq -r '.number' <<<"$PR_JSON")
+          head_branch=$(jq -r '.headBranchName' <<<"$PR_JSON")
+          base_branch=$(jq -r '.baseBranchName' <<<"$PR_JSON")
+
+          # Read the single root (".") entry of the release-please manifest at a ref.
+          manifest_version() {
+            gh api "repos/${GH_REPO}/contents/.release-please-manifest.json?ref=$1" \
+              -H "Accept: application/vnd.github.raw" | jq -r '.["."]'
+          }
+
+          current=$(manifest_version "$base_branch")
+          next=$(manifest_version "$head_branch")
+
+          IFS=. read -r cmaj cmin cpat <<<"$current"
+          IFS=. read -r nmaj nmin npat <<<"$next"
+
+          if   [ "$nmaj" -gt "$cmaj" ]; then bump=major
+          elif [ "$nmin" -gt "$cmin" ]; then bump=minor
+          elif [ "$npat" -gt "$cpat" ]; then bump=patch
+          else bump=none
+          fi
+
+          echo "Release PR #${pr_number}: ${current} -> ${next} (${bump} bump); auto-merge-level=${AUTO_MERGE_LEVEL}"
+
+          # Merge when the PR's bump is a real release and is no larger than the
+          # configured ceiling (none < patch < minor < major).
+          if [ "$(level_num "$bump")" -ge 1 ] && [ "$(level_num "$bump")" -le "$(level_num "$AUTO_MERGE_LEVEL")" ]; then
+            want_merge=true
+          else
+            want_merge=false
+          fi
+
+          # Only mutate when the desired state differs from the current one, so the
+          # common case (no opt-in) is a no-op rather than a failing disable call.
+          enabled=$(gh pr view "$pr_number" --json autoMergeRequest --jq '.autoMergeRequest != null')
+
+          if [ "$want_merge" = true ] && [ "$enabled" != true ]; then
+            echo "Enabling auto-merge (squash) on PR #${pr_number}"
+            gh pr merge "$pr_number" --auto --squash
+          elif [ "$want_merge" = false ] && [ "$enabled" = true ]; then
+            echo "Disabling auto-merge on PR #${pr_number}"
+            gh pr merge "$pr_number" --disable-auto
+          else
+            echo "Auto-merge already in desired state (enabled=${enabled}, want=${want_merge}); nothing to do"
+          fi

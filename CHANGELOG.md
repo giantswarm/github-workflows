@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
-## 2026-05-21
+## 2026-05-27
+
+### Added
+
+- `release.yaml` (release-please reusable workflow) gained an `auto-merge-level` input (`none`, `patch`, `minor`, `major`; default `none`). When set, the workflow enables GitHub auto-merge (`gh pr merge --auto --squash`) on the open release-please PR if the PR's bump is no larger than the configured ceiling, so the PR merges automatically once CI passes. The bump is derived from `.release-please-manifest.json` (next version on the PR head branch vs. current version on the base branch), so it is independent of each caller's PR-title configuration. Auto-merge is reconciled on every run — if a release-please PR's bump grows past the ceiling (e.g. from `patch` to `major`) before it is merged, auto-merge is disabled again. The default `none` preserves the previous behaviour (no auto-merge). The merge is performed with the `release-please` GitHub App token, so the merge is attributed to the App; the App must be granted bypass on any branch protection and the repository must have "Allow auto-merge" enabled.
 
 ### Changed
 
