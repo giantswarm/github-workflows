@@ -138,7 +138,10 @@ jobs:
 
           if [ "$want_merge" = true ] && [ "$enabled" != true ]; then
             echo "Enabling auto-merge (squash) on PR #${pr_number}"
-            gh pr merge "$pr_number" --auto --squash
+            # Soft-fail: a repo that hasn't enabled "Allow auto-merge" or hasn't granted
+            # the App branch-protection bypass shouldn't break its whole release run.
+            gh pr merge "$pr_number" --auto --squash \
+              || echo "::warning::Could not enable auto-merge on PR #${pr_number}. Check that 'Allow auto-merge' is enabled and the release-please App can bypass branch protection."
           elif [ "$want_merge" = false ] && [ "$enabled" = true ]; then
             echo "Disabling auto-merge on PR #${pr_number}"
             gh pr merge "$pr_number" --disable-auto
