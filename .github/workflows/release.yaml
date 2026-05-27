@@ -8,7 +8,11 @@ name: Release
 on:
   workflow_call:
     secrets:
-      TAYLORBOT_GITHUB_ACTION:
+      RELEASE_PLEASE_CLIENT_ID:
+        description: Client ID for create-github-app-token
+        required: true
+      RELEASE_PLEASE_PRIVATE_KEY:
+        description: Private key for create-github-app-token
         required: true
     outputs:
       release_created:
@@ -47,10 +51,17 @@ jobs:
       patch: ${{ steps.release_please.outputs.patch }}
       pr: ${{ steps.release_please.outputs.pr }}
     steps:
+      - name: Generate GitHub App token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
+
       - name: Run release-please
         id: release_please
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          token: ${{ steps.generate_token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
