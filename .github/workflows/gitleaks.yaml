@@ -15,4 +15,4 @@ jobs:
         with:
           fetch-depth: '0'
       - name: gitleaks-action
-        uses: giantswarm/gitleaks-action@main
+        uses: giantswarm/gitleaks-action@858fcb6611d238db1a344ae267689bd5e3b9a6dc # main
