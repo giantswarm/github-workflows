@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-28
+
+### Added
+
+- New local composite action `.github/actions/gitsemver-install` installs and caches the [`giantswarm/gitsemver`](https://github.com/giantswarm/gitsemver) binary (default `v1.1.1`, Renovate-tracked) on the runner. Used by `create-release-pr.yaml` and `create-release.yaml`; restores from `actions/cache` keyed on the version + `runner.os`/`runner.arch`, only downloading on a cache miss.
+- `create-release-pr.yaml` accepts new bump tokens on the trigger branch (`branch#<token>`): `patch-rc`, `minor-rc`, `major-rc`, `rc`, `rc-release`. They are passed verbatim to `gitsemver next` and produce release-candidate versions like `v1.3.0-rc.1`, `v1.3.0-rc.2`, then `v1.3.0` via `rc-release`. The existing `patch` / `minor` / `major` tokens continue to work unchanged.
+- `create-release.yaml` exposes a new `is_rc` output on its `gather_facts` job (true when the released tag is an RC per `gitsemver validate --type rc`).
+
+### Changed
+
+- `create-release-pr.yaml` now computes the next version with `gitsemver next <token>` instead of the inline `gh api releases/latest` + manual increment. Explicit-version trigger branches (`branch#vX.Y.Z[-rc.N]`) are now validated by `gitsemver validate --type any` and rejected on invalid input — strings that previously slipped through the loose regex (e.g. `1.2.3.foo`) are now hard failures with a clear error. The job now checks out the base branch with `fetch-depth: 0` and `persist-credentials: false` so gitsemver can see full tag history.
+- `create-release.yaml` validates the version parsed from the release-PR commit title with `gitsemver` rather than an inline regex. RC tags (`vX.Y.Z-rc.N`) are first-class: they create the tag and GH release like a stable version, and they DO still trigger the post-release `-dev` bump of `project.go` (the new dev string targets the stable the RC is leading toward, e.g. `1.3.0-rc.1` ➝ `1.3.0-dev`). The long-lived `release-vX.Y.x` branch is only cut for stable major/minor releases — RC releases skip that job.
+- `release.yaml` (release-please) auto-merge reconciler now strips any pre-release suffix from the manifest versions before the numeric `X.Y.Z` compare, so a `1.3.0-rc.1 → 1.3.0-rc.2` PR (or an RC ➝ stable promotion) is classified as `bump=patch` rather than silently `bump=none`. Auto-merge therefore honours the configured `auto-merge-level` ceiling on RC PRs too. Consumers wanting RC support on this path enable it in their own `release-please-config.json` with `"versioning": "prerelease"`, `"prerelease": true`, `"prerelease-type": "rc"` — `release.yaml` itself stays single-code-path.
+
+### Removed
+
+- `create-release.yaml` no longer recognises the legacy "reference version" form `vX.Y.Z-N` (e.g. `v1.2.3-4`) — the dedicated `ref_version` job and its special-case regex are gone. Any repo still pushing such tags via this workflow will need to migrate to the RC form (`vX.Y.Z-rc.N`).
+- `create-release.yaml` and `create-release-pr.yaml` no longer install `fsaintjacques/semver-tool`; all next-version arithmetic now goes through `gitsemver` (or bash parameter expansion on a version string already validated by it).
+
 ## 2026-05-27
 
 ### Added

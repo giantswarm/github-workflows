@@ -34,36 +34,48 @@ jobs:
       contents: read
     outputs:
       project_go_path: ${{ steps.get_project_go_path.outputs.path }}
-      ref_version: ${{ steps.ref_version.outputs.refversion }}
       version: ${{ steps.get_version.outputs.version }}
+      is_rc: ${{ steps.get_version.outputs.is_rc }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install gitsemver
+        uses: ./.github/actions/gitsemver-install
       - name: Get version
         id: get_version
         env:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
-          # Matches strings like:
-          #
+          set -euo pipefail
+          # Accept release-PR titles of the form:
           #   - "chore(release): v1.2.3"
-          #   - "chore(release): v1.2.3-r4"
+          #   - "chore(release): v1.2.3-rc.4"
           #   - "chore(release): v1.2.3 (#56)"
-          #   - "chore(release): v1.2.3-r4 (#56)"
-          #
-          # The legacy "Release v..." form is also accepted for
-          # backward compatibility with PRs created by older versions
-          # of the create-release-pr workflow.
-          #
-          # And outputs version part (1.2.3).
-          if echo "${title}" | grep -iqE '^(chore\(release\):|Release) v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
-          version=$(echo "${title}" | cut -d ' ' -f 2)
+          # The legacy "Release v..." form is also accepted for backward
+          # compatibility with PRs created by older versions of
+          # create-release-pr.yaml. Anything else (no match) yields an empty
+          # version output, which short-circuits the workflow as before.
+          title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
+          version=""
+          is_rc=false
+          if echo "${title}" | grep -iqE '^(chore\(release\):|Release) v[^ ]+( \(#[0-9]+\))?$' ; then
+            candidate=$(echo "${title}" | cut -d ' ' -f 2)
+            candidate="${candidate#v}"
+            if gitsemver validate --type any "${candidate}" >/dev/null 2>&1; then
+              version="${candidate}"
+              if gitsemver validate --type rc "${candidate}" >/dev/null 2>&1; then
+                is_rc=true
+              fi
+            else
+              echo "::error::Title looks like a release commit but '${candidate}' is not a valid semver per gitsemver."
+              exit 1
+            fi
           fi
-          version="${version#v}" # Strip "v" prefix.
-          echo "version=\"${version}\""
+          echo "version=\"${version}\" is_rc=\"${is_rc}\""
           echo "version=${version}" >> $GITHUB_OUTPUT
-      - name: Checkout code
-        if: ${{ steps.get_version.outputs.version != '' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+          echo "is_rc=${is_rc}" >> $GITHUB_OUTPUT
       - name: Get project.go path
         id: get_project_go_path
         if: ${{ steps.get_version.outputs.version != '' }}
@@ -74,29 +86,12 @@ jobs:
           fi
           echo "path=\"$path\""
           echo "path=${path}" >> $GITHUB_OUTPUT
-      - name: Check if reference version
-        id: ref_version
-        env:
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          title=$(echo -n "${COMMIT_MESSAGE}" | head -1)
-          if echo "${title}" | grep -iqE '^(chore\(release\):|Release) v[0-9]+\.[0-9]+\.[0-9]+([.-][^ .-][^ ]*)?( \(#[0-9]+\))?$' ; then
-            version=$(echo "${title}" | cut -d ' ' -f 2)
-          fi
-          version=$(echo "${title}" | cut -d ' ' -f 2)
-          version="${version#v}" # Strip "v" prefix.
-          refversion=false
-          if [[ "${version}" =~ ^[0-9]+.[0-9]+.[0-9]+-[0-9]+$ ]]; then
-            refversion=true
-          fi
-          echo "refversion =\"${refversion}\""
-          echo "refversion=${refversion}" >> $GITHUB_OUTPUT
   update_project_go:
     name: Update project.go
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-    if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
+    if: ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' }}
     needs:
       - gather_facts
     steps:
@@ -105,27 +100,32 @@ jobs:
         with:
           binary: "architect"
           version: "6.14.1"
-      - name: Install semver
-        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
-        with:
-          binary: "semver"
-          version: "3.2.0"
-          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
-          tarball_binary_path: "*/src/${binary}"
-          smoke_test: "${binary} --version"
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          fetch-depth: 0
           persist-credentials: false
+      - name: Install gitsemver
+        uses: ./.github/actions/gitsemver-install
       - name: Update project.go
         id: update_project_go
         env:
           branch: "${{ github.ref }}-version-bump"
+          IS_RC: "${{ needs.gather_facts.outputs.is_rc }}"
         run: |
+          set -euo pipefail
           git checkout -b ${{ env.branch }}
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
-          new_version="$(semver bump patch $version)-dev"
+          if [[ "${IS_RC}" == "true" ]]; then
+            # An RC like 1.3.0-rc.1 returns project.go to the dev string for the
+            # stable it is leading toward (1.3.0-dev). This way successive RCs
+            # do not drift project.go forward and the final stable release lands
+            # on the version project.go already advertises.
+            new_version="${version%-rc.*}-dev"
+          else
+            new_version="$(gitsemver next patch --last-tag "v${version}")-dev"
+          fi
           echo "version=\"$version\" new_version=\"$new_version\""
           echo "new_version=${new_version}" >> $GITHUB_OUTPUT
           sed -Ei "s/(version[[:space:]]*=[[:space:]]*)\"${version}\"/\1\"${new_version}\"/" $file
@@ -185,7 +185,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Ensure correct version in project.go
-        if: ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version != 'true' }}
+        if: ${{ needs.gather_facts.outputs.project_go_path != '' }}
         run: |
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
@@ -252,24 +252,18 @@ jobs:
       contents: write
     needs:
       - gather_facts
-    if: ${{ needs.gather_facts.outputs.version }}
+    if: ${{ needs.gather_facts.outputs.version && needs.gather_facts.outputs.is_rc != 'true' }}
     steps:
-      - name: Install semver
-        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
-        with:
-          binary: "semver"
-          version: "3.0.0"
-          download_url: "https://github.com/fsaintjacques/${binary}-tool/archive/${version}.tar.gz"
-          tarball_binary_path: "*/src/${binary}"
-          smoke_test: "${binary} --version"
       - name: Check out the repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0  # Clone the whole history, not just the most recent commit.
+          persist-credentials: false
       - name: Fetch all tags and branches
         run: "git fetch --all"
       - name: Create long-lived release branch
         run: |
+          set -euo pipefail
           current_version="${{ needs.gather_facts.outputs.version }}"
           parent_version="$(git describe --tags --abbrev=0 HEAD^ || true)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
@@ -281,10 +275,11 @@ jobs:
 
           echo "current_version=$current_version parent_version=$parent_version"
 
-          current_major=$(semver get major $current_version)
-          current_minor=$(semver get minor $current_version)
-          parent_major=$(semver get major $parent_version)
-          parent_minor=$(semver get minor $parent_version)
+          # Strip any pre-release suffix before splitting on '.', so a parent tag
+          # that happens to be an RC (e.g. 1.2.3-rc.4) is treated as 1.2.3 for
+          # the comparison.
+          IFS=. read -r current_major current_minor _ <<<"${current_version%%-*}"
+          IFS=. read -r parent_major parent_minor _ <<<"${parent_version%%-*}"
           echo "current_major=$current_major current_minor=$current_minor"
           echo "parent_major=$parent_major parent_minor=$parent_minor"
 

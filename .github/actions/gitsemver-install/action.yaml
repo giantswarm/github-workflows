@@ -1,0 +1,70 @@
+name: Install gitsemver
+description: Install and cache the giantswarm/gitsemver binary, prepending it to PATH.
+
+inputs:
+  version:
+    description: gitsemver release tag (e.g. v1.1.1).
+    required: false
+    # renovate: datasource=github-releases depName=giantswarm/gitsemver
+    default: v1.1.1
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve install path
+      id: paths
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        dir="${RUNNER_TOOL_CACHE}/gitsemver/${VERSION}/${RUNNER_ARCH}"
+        echo "dir=${dir}" >> "$GITHUB_OUTPUT"
+
+    - name: Restore gitsemver cache
+      id: cache
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: ${{ steps.paths.outputs.dir }}
+        key: gitsemver-${{ inputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Download gitsemver
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        DIR: ${{ steps.paths.outputs.dir }}
+      run: |
+        set -euo pipefail
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        case "$(uname -m)" in
+          x86_64)        arch=amd64 ;;
+          aarch64|arm64) arch=arm64 ;;
+          *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p "$DIR"
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        url="https://github.com/giantswarm/gitsemver/releases/download/${VERSION}/gitsemver-${VERSION}-${os}-${arch}.tar.gz"
+        curl -fsSL "$url" -o "$tmp/gitsemver.tgz"
+        tar -xzf "$tmp/gitsemver.tgz" -C "$tmp"
+        bin="$(find "$tmp" -type f -name gitsemver | head -1)"
+        if [[ -z "$bin" ]]; then
+          echo "gitsemver binary not found in tarball $url" >&2
+          exit 1
+        fi
+        install -m 0755 "$bin" "$DIR/gitsemver"
+
+    - name: Add gitsemver to PATH
+      shell: bash
+      env:
+        DIR: ${{ steps.paths.outputs.dir }}
+      run: |
+        echo "$DIR" >> "$GITHUB_PATH"
+
+    - name: Smoke test
+      shell: bash
+      env:
+        DIR: ${{ steps.paths.outputs.dir }}
+      run: |
+        "$DIR/gitsemver" --help > /dev/null
