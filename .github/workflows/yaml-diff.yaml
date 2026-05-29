@@ -22,7 +22,10 @@ on:
       exclude_paths:
         type: string
         default: "**/*.enc.yaml .github/** .pre-commit-config.yaml"
-        description: "Space-separated glob patterns to exclude. Patterns ending in `/**` match a directory prefix; patterns without `/` match by basename; otherwise exact path match. SOPS-encrypted files must remain excluded."
+        description: >-
+          Space-separated glob patterns to exclude. Patterns ending in `/**` match a directory
+          prefix; patterns without `/` match by basename; otherwise exact path match.
+          SOPS-encrypted files must remain excluded.
 
 permissions: {}
 
