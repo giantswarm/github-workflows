@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-05-29
+
+### Added
+
+- Add reusable workflow `yaml-diff.yaml`. Posts a semantic YAML diff (via `dyff`) of source files changed in a PR as a sticky PR comment. Key reordering without value changes is ignored, so reviewers see only meaningful changes. Companion to `helm-render-diff.yaml` (which diffs rendered Helm output rather than source). Shares the `/no_diffs_printing` opt-out with the helm workflow. Enables consumers to drop alphabetical-key-ordering enforcement from their YAML linters without losing diff readability (see [giantswarm/roadmap#4121](https://github.com/giantswarm/roadmap/issues/4121)).
+
 ## 2026-05-27
 
 ### Added

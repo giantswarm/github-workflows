@@ -1,0 +1,249 @@
+name: Compare YAML Source
+
+# Posts a semantic diff (via dyff) of YAML source files changed in a PR as a
+# sticky PR comment. Key-order changes are ignored, so reviewers see only
+# value-level changes. Companion to helm-render-diff.yaml (which diffs
+# rendered Helm output rather than source).
+#
+# Opt-out: include `/no_diffs_printing` on its own line in the PR body or as
+# a comment. The same command suppresses helm-render-diff.yaml.
+
+on:
+  workflow_call:
+    inputs:
+      dyff_version:
+        type: string
+        default: "1.7.1"
+        description: "dyff release version to install."
+      paths:
+        type: string
+        default: "*.yaml *.yml"
+        description: "Space-separated git pathspecs selecting which files to diff (passed after `git diff -- <paths>`)."
+      exclude_paths:
+        type: string
+        default: "**/*.enc.yaml .github/** .pre-commit-config.yaml"
+        description: "Space-separated glob patterns to exclude. Patterns ending in `/**` match a directory prefix; patterns without `/` match by basename; otherwise exact path match. SOPS-encrypted files must remain excluded."
+
+permissions: {}
+
+concurrency:
+  group: yaml-diff-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Checks for the `/no_diffs_printing` opt-out. When found, the diff job is
+  # skipped. Shared semantics with helm-render-diff.yaml — one command, one UX.
+  check-cmp-state:
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Find suspend comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        continue-on-error: true
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-regex: '^\s*/no_diffs_printing' # on its own line, not as `<!-- /no_diffs_printing -->`
+      - name: Find suspend comment in PR body
+        id: pr_body
+        run: |
+          if jq -r .pull_request.body "${GITHUB_EVENT_PATH}" | grep -qE '^\s*/no_diffs_printing'; then
+            echo "Found /no_diffs_printing command in PR body"
+            echo "suspend_diffs_printing_from_pr_body=true" >> $GITHUB_OUTPUT
+          else
+            echo "Did not find /no_diffs_printing command in PR body"
+            echo "suspend_diffs_printing_from_pr_body=false" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      suspend_comment_id: ${{ steps.fc.outputs.comment-id }}
+      suspend_diffs_printing_from_pr_body: ${{ steps.pr_body.outputs.suspend_diffs_printing_from_pr_body }}
+
+  cmp-yaml-source:
+    needs: check-cmp-state
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    if: github.event_name == 'pull_request' && needs.check-cmp-state.outputs.suspend_comment_id == 0 && needs.check-cmp-state.outputs.suspend_diffs_printing_from_pr_body == 'false'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: install dyff
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: dyff
+          download_url: "https://github.com/homeport/dyff/releases/download/v${version}/dyff_${version}_linux_amd64.tar.gz"
+          smoke_test: "${binary} version"
+          tarball_binary_path: "${binary}"
+          version: ${{ inputs.dyff_version }}
+      - run: which dyff
+      - name: compute diffs
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PATHS: ${{ inputs.paths }}
+          EXCLUDE_PATHS: ${{ inputs.exclude_paths }}
+        run: |
+          set -uo pipefail
+
+          # GitHub PR comments are capped at 65536 chars. Leave headroom for wrapper markdown.
+          per_file_cap=5000
+          total_cap=60000
+
+          # Ensure base ref is available locally (fetch-depth: 0 already pulls everything,
+          # but be defensive about shallow clones).
+          git fetch --no-tags origin "${BASE_REF}" >/dev/null 2>&1 || true
+          base_sha=$(git rev-parse "origin/${BASE_REF}")
+          echo "Base: ${BASE_REF} (${base_sha})"
+
+          # Split inputs into arrays without shell-expanding the globs.
+          read -r -a path_globs <<< "${PATHS}"
+          read -r -a exclude_globs <<< "${EXCLUDE_PATHS}"
+
+          # Exclude matcher. Handles three common pattern shapes:
+          #   foo/**             — directory prefix
+          #   *.something        — basename match (no slash in pattern)
+          #   anything else      — exact path match
+          should_exclude() {
+            local path="$1"
+            local g prefix
+            for g in "${exclude_globs[@]}"; do
+              if [[ "${g}" == */"**" ]]; then
+                prefix="${g%/**}"
+                [[ "${path}" == "${prefix}/"* ]] && return 0
+                [[ "${path}" == "${prefix}" ]] && return 0
+              elif [[ "${g}" != *"/"* ]]; then
+                # shellcheck disable=SC2053
+                [[ "$(basename "${path}")" == ${g} ]] && return 0
+              else
+                [[ "${path}" == "${g}" ]] && return 0
+              fi
+            done
+            return 1
+          }
+
+          # List changed files: added + modified only. Renames are not detected (no -M),
+          # so renamed-without-content-change shows as delete+add and the add gets diffed.
+          # Deletes are filtered out — diffing a removed file's old content adds noise.
+          mapfile -t changed < <(git diff --name-only --diff-filter=AM "${base_sha}...HEAD" -- "${path_globs[@]}" | sort -u)
+
+          mkdir -p /tmp/yaml-diff
+          : > /tmp/yaml-diff/body
+
+          found_differences=
+          total_size=0
+          truncated=
+
+          for path in "${changed[@]}"; do
+            [[ -z "${path}" ]] && continue
+            if should_exclude "${path}"; then
+              echo "Excluded: ${path}"
+              continue
+            fi
+
+            status=$(git diff --name-status --diff-filter=AM "${base_sha}...HEAD" -- "${path}" | awk '{print $1}' | head -n1)
+            : > /tmp/yaml-diff/file-diff
+
+            case "${status}" in
+              A)
+                # New file: there's no base content to diff against, so we just note it.
+                # dyff against /dev/null can crash on some YAML shapes; the line-diff in
+                # GitHub's UI already shows the added file content.
+                echo "(Added — see file diff in PR for content)" >> /tmp/yaml-diff/file-diff
+                ;;
+              M)
+                tmpold=$(mktemp)
+                git show "${base_sha}:${path}" > "${tmpold}" 2>/dev/null
+                if dyff between --set-exit-code --ignore-order-changes --omit-header \
+                  --use-go-patch-style "${tmpold}" "${path}" > /tmp/yaml-diff/file-diff 2>&1; then
+                  # exit 0 = no semantic difference (e.g. only key reordering); skip this file
+                  rm -f "${tmpold}"
+                  continue
+                else
+                  res=$?
+                  if [[ ${res} -eq 255 ]]; then
+                    echo "Diff error" >> /tmp/yaml-diff/file-diff
+                  fi
+                fi
+                rm -f "${tmpold}"
+                ;;
+              *)
+                echo "(unhandled status: ${status})" >> /tmp/yaml-diff/file-diff
+                ;;
+            esac
+
+            section=$(mktemp)
+            {
+              echo
+              echo "=== ${path} ==="
+              cat /tmp/yaml-diff/file-diff
+            } > "${section}"
+
+            section_size=$(wc -c < "${section}")
+            if (( section_size > per_file_cap )); then
+              head -c "${per_file_cap}" "${section}" > "${section}.trunc"
+              printf '\n... (truncated, file diff exceeded %d bytes)\n' "${per_file_cap}" >> "${section}.trunc"
+              mv "${section}.trunc" "${section}"
+              section_size=$(wc -c < "${section}")
+            fi
+
+            if (( total_size + section_size > total_cap )); then
+              truncated=1
+              rm -f "${section}"
+              break
+            fi
+            cat "${section}" >> /tmp/yaml-diff/body
+            total_size=$(( total_size + section_size ))
+            found_differences=1
+            rm -f "${section}"
+          done
+
+          {
+            if [[ -z "${found_differences}" ]]; then
+              echo "<!-- YAML source diff output -->"
+              echo "**No semantic YAML differences** in changed source files. (Key reordering without value changes is ignored.)"
+            else
+              echo "<!-- YAML source diff output -->"
+              echo "**Semantic YAML source diff** — key reordering without value changes is ignored."
+              echo
+              if [[ -n "${truncated}" ]]; then
+                echo "⚠️ Output truncated to fit GitHub's comment size limit. See the [workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) for full output."
+                echo
+              fi
+              echo "<details>"
+              echo "<summary>Output</summary>"
+              echo "<!-- mandatory empty line -->"
+              echo
+              echo '```'
+              cat /tmp/yaml-diff/body
+              echo '```'
+              echo "</details>"
+              echo "<!-- mandatory empty line -->"
+            fi
+            echo
+            echo "_Suppress with \`/no_diffs_printing\` on its own line in the PR body or as a comment._"
+          } > /tmp/yaml-diff/comment-body
+      - name: Find diff comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        continue-on-error: true
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: 'YAML source diff output'
+      - name: Delete old comment
+        uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
+        continue-on-error: true
+        if: steps.fc.outputs.comment-id != 0
+        with:
+          type: delete
+          comment_id: ${{ steps.fc.outputs.comment-id }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create comment
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-path: /tmp/yaml-diff/comment-body
