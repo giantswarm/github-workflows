@@ -337,6 +337,14 @@ jobs:
         with:
           binary: "architect"
           version: "6.14.1"
+      - name: Install gitsemver
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          version: "1.1.2"
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          tarball_binary_path: "*/${binary}"
+          smoke_test: "${binary} version"
       - name: Set up Go ${{ env.GO_VERSION }}
         uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
         with:
@@ -353,7 +361,7 @@ jobs:
         run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform
         run: |
-          if [[ "${{ matrix.platform }}" == "windows-amd64" ]]; then
+          if [[  "${{ matrix.platform }}" == "windows-amd64" ]]; then
             echo "FILE_NAME=${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}.zip" >> $GITHUB_ENV
           else
             echo "FILE_NAME=${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}.tar.gz" >> $GITHUB_ENV
