@@ -20,6 +20,12 @@ on:
       RELEASE_PLEASE_PRIVATE_KEY:
         description: Private key for create-github-app-token
         required: true
+      RELEASE_PLEASE_APPROVER_CLIENT_ID:
+        description: Client ID for the release-please-approver App used to satisfy required-approval branch protection on release PRs. Optional — when omitted, the auto-approve step is skipped and the release PR will need a human approval to merge.
+        required: false
+      RELEASE_PLEASE_APPROVER_PRIVATE_KEY:
+        description: Private key for the release-please-approver App. Required if RELEASE_PLEASE_APPROVER_CLIENT_ID is set.
+        required: false
     outputs:
       release_created:
         description: "Set to 'true' if a release was created."
@@ -71,6 +77,38 @@ jobs:
           token: ${{ steps.generate_token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Auto-approve release-please PRs via a dedicated GitHub App so branch
+      # protection's required-approval rule is satisfied and `--auto` can complete
+      # the merge once checks pass. The approving identity is intentionally distinct
+      # from the release-please App that authors the PR (GitHub rejects self-approval).
+      # release-please PRs aggregate commits that were already reviewed on their way
+      # to the base branch; this approval covers only the auto-generated CHANGELOG
+      # aggregation, not the underlying changes.
+      #
+      # The approver secrets are optional — when omitted, this whole pair of steps
+      # is skipped and the PR will need a human approval (existing-caller behavior).
+      - name: Generate release-please-approver App token
+        id: approver_token
+        if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-merge-level != 'none' && env.APPROVER_CLIENT_ID != '' }}
+        env:
+          APPROVER_CLIENT_ID: ${{ secrets.RELEASE_PLEASE_APPROVER_CLIENT_ID }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_PLEASE_APPROVER_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APPROVER_PRIVATE_KEY }}
+
+      - name: Auto-approve Release Please PR
+        if: ${{ steps.approver_token.outputs.token != '' }}
+        env:
+          GH_TOKEN: ${{ steps.approver_token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_JSON: ${{ steps.release_please.outputs.pr }}
+        run: |
+          set -euo pipefail
+          pr_number=$(jq -r '.number' <<<"$PR_JSON")
+          gh pr review "$pr_number" --approve \
+            --body "Auto-approved by release-please-approver. Underlying commits were reviewed on their feature PRs; this satisfies branch protection's required-approval rule for the aggregated release PR."
 
       # Reconcile auto-merge on the open Release Please PR every run. release-please
       # keeps a single PR open and rewrites it as commits land, so its bump level can
