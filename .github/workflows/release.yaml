@@ -105,9 +105,12 @@ jobs:
           base_branch=$(jq -r '.baseBranchName' <<<"$PR_JSON")
 
           # Read the single root (".") entry of the release-please manifest at a ref.
+          # On a fresh repo the manifest is an empty object until the first release lands,
+          # so a missing "." key is normalized to 0.0.0 — otherwise the numeric comparisons
+          # below silently fall through and the first release's bump is classified as none.
           manifest_version() {
             gh api "repos/${GH_REPO}/contents/.release-please-manifest.json?ref=$1" \
-              -H "Accept: application/vnd.github.raw" | jq -r '.["."]'
+              -H "Accept: application/vnd.github.raw" | jq -r '.["."] // "0.0.0"'
           }
 
           current=$(manifest_version "$base_branch")
