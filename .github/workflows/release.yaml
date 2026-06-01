@@ -21,7 +21,7 @@ on:
         description: Private key for create-github-app-token
         required: true
       RELEASE_PLEASE_APPROVER_CLIENT_ID:
-        description: Client ID for the release-please-approver App used to satisfy required-approval branch protection on release PRs. Optional — when omitted, the auto-approve step is skipped and the release PR will need a human approval to merge.
+        description: Client ID for the release-please-approver App. Optional — when omitted, auto-approve is skipped and the release PR needs a human approval to merge.
         required: false
       RELEASE_PLEASE_APPROVER_PRIVATE_KEY:
         description: Private key for the release-please-approver App. Required if RELEASE_PLEASE_APPROVER_CLIENT_ID is set.
