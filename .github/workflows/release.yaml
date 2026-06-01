@@ -107,8 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           pr_number=$(jq -r '.number' <<<"$PR_JSON")
-          gh pr review "$pr_number" --approve \
-            --body "Auto-approved by release-please-approver. Underlying commits were reviewed on their feature PRs; this satisfies branch protection's required-approval rule for the aggregated release PR."
+          gh pr review "$pr_number" --approve
 
       # Reconcile auto-merge on the open Release Please PR every run. release-please
       # keeps a single PR open and rewrites it as commits land, so its bump level can
