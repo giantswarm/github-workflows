@@ -6,11 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-01
+
+### Changed
+
+- `create-release-pr.yaml` and `create-release.yaml` install [`giantswarm/gitsemver`](https://github.com/giantswarm/gitsemver) `v1.1.2` via `giantswarm/install-binary-action` (the same mechanism already used for `architect` and Renovate-tracked), replacing the short-lived local composite action `.github/actions/gitsemver-install`. A local composite referenced as `uses: ./.github/actions/...` does not resolve inside a reusable (`workflow_call`) workflow — the runner looks the path up in the **caller** repository's checkout, not in `github-workflows` — so it failed for every consumer of these workflows. `v1.1.2` also fixes the `gitsemver --version` self-info flag, which the install step's smoke test now uses. This aligns these workflows with `architect-orb` v9.0.0, where `gitsemver` is the single source of git-based semver.
+- `create-release.yaml`'s build-artifacts job keeps installing `architect` purely as a transition aid: consumer Makefiles still on the pre-gitsemver `devctl` template stamp release artifacts with `VERSION := $(shell architect project version)`. `devctl`'s current `Makefile.gen.go.mk` template uses `gitsemver version` (already installed in that job), so the `architect` install becomes removable once all consumers regenerate their Makefile. No version or git tag in these workflows is produced by `architect` — `gitsemver` is the sole source (`architect prepare-release` only consumes the already-resolved `--version`).
+
+### Removed
+
+- `create-release.yaml` no longer installs the `architect` binary in the `update_project_go` job. It was installed but never invoked — the post-release `-dev` bump of `project.go` is computed entirely with `gitsemver next patch` plus a `sed` rewrite.
+- `create-release.yaml` drops the leftover `needs.gather_facts.outputs.ref_version != 'true'` guards on the `update_project_go` job and the `Ensure correct version in project.go` step. The `ref_version` output was removed together with the legacy reference-version handling, so the guards always evaluated truthy and only obscured the real conditions.
+
 ## 2026-05-28
 
 ### Added
 
-- New local composite action `.github/actions/gitsemver-install` installs and caches the [`giantswarm/gitsemver`](https://github.com/giantswarm/gitsemver) binary (default `v1.1.1`, Renovate-tracked) on the runner. Used by `create-release-pr.yaml` and `create-release.yaml`; restores from `actions/cache` keyed on the version + `runner.os`/`runner.arch`, only downloading on a cache miss.
 - `create-release-pr.yaml` accepts new bump tokens on the trigger branch (`branch#<token>`): `patch-rc`, `minor-rc`, `major-rc`, `rc`, `rc-release`. They are passed verbatim to `gitsemver next` and produce release-candidate versions like `v1.3.0-rc.1`, `v1.3.0-rc.2`, then `v1.3.0` via `rc-release`. The existing `patch` / `minor` / `major` tokens continue to work unchanged.
 - `create-release.yaml` exposes a new `is_rc` output on its `gather_facts` job (true when the released tag is an RC per `gitsemver validate --type rc`).
 

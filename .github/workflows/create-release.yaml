@@ -42,7 +42,14 @@ jobs:
         with:
           persist-credentials: false
       - name: Install gitsemver
-        uses: ./.github/actions/gitsemver-install
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
+          version: "1.1.2"
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          tarball_binary_path: "*/${binary}"
+          smoke_test: "${binary} --version"
       - name: Get version
         id: get_version
         env:
@@ -92,23 +99,24 @@ jobs:
     permissions:
       contents: read
     if:
-      ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' &&
-      needs.gather_facts.outputs.ref_version != 'true' }}
+      ${{ needs.gather_facts.outputs.version != '' && needs.gather_facts.outputs.project_go_path != '' }}
     needs:
       - gather_facts
     steps:
-      - name: Install architect
-        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
-        with:
-          binary: "architect"
-          version: "6.14.1"
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Install gitsemver
-        uses: ./.github/actions/gitsemver-install
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
+          version: "1.1.2"
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          tarball_binary_path: "*/${binary}"
+          smoke_test: "${binary} --version"
       - name: Update project.go
         id: update_project_go
         env:
@@ -189,9 +197,7 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Ensure correct version in project.go
-        if:
-          ${{ needs.gather_facts.outputs.project_go_path != '' && needs.gather_facts.outputs.ref_version !=
-          'true' }}
+        if: ${{ needs.gather_facts.outputs.project_go_path != '' }}
         run: |
           file="${{ needs.gather_facts.outputs.project_go_path }}"
           version="${{ needs.gather_facts.outputs.version }}"
@@ -335,6 +341,11 @@ jobs:
       - create_release
       - gather_facts
     steps:
+      # Transitional: only needed by consumer Makefiles still on the pre-gitsemver
+      # devctl template, where `VERSION := $(shell architect project version)`
+      # stamps the release artifacts. devctl's current template uses
+      # `gitsemver version` (installed below), so this install can be dropped
+      # once all consumers have regenerated their Makefile.gen.go.mk.
       - name: Install architect
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
@@ -344,6 +355,7 @@ jobs:
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
           version: "1.1.2"
           download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
           tarball_binary_path: "*/${binary}"

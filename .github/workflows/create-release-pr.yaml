@@ -74,7 +74,14 @@ jobs:
           persist-credentials: false
 
       - name: Install gitsemver
-        uses: ./.github/actions/gitsemver-install
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
+          version: "1.1.2"
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          tarball_binary_path: "*/${binary}"
+          smoke_test: "${binary} --version"
 
       - name: Resolve version
         id: resolve
