@@ -51,7 +51,7 @@ jobs:
 
           git checkout "origin/${{ github.ref_name }}" -- vendir.yml
           git add vendir.yml
-          git diff --cached --quiet || git commit -m "Update vendir.yml from upstream"
+          git diff --cached --quiet || git commit -m "chore: update vendir.yml from upstream"
           git push origin "${{ inputs.update_branch }}"
 
   call-update-chart:
@@ -69,7 +69,7 @@ jobs:
     needs: call-update-chart
     outputs:
       entries: ${{ steps.changelogger.outputs.entries }}
-      new_values: ${{ steps.values_sync_dry_run.outputs.new_values }}
+      drift: ${{ steps.values_drift.outputs.drift }}
     steps:
       - name: Generate token
         id: generate_token
@@ -97,25 +97,25 @@ jobs:
           fi
           echo "Detected chart directory: ${chart_dir}"
           echo "chart_dir=${chart_dir}" >> "$GITHUB_OUTPUT"
-      - name: Run values-sync dry-run
-        id: values_sync_dry_run
+      - name: Detect upstream values drift
+        id: values_drift
         run: |
           config_args=()
           if [[ -f "values-sync-ignore.yaml" ]]; then
             config_args+=(--config /github/workspace/values-sync-ignore.yaml)
           fi
-          new_values=$(docker run --rm \
+          drift=$(docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.4 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
             --show-git-diff \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}" || true)
-          echo "${new_values}"
-          if [[ -n "${new_values}" ]]; then
+          echo "${drift}"
+          if [[ -n "${drift}" ]]; then
             delimiter=$(openssl rand -hex 16)
             {
-              echo "new_values<<${delimiter}"
-              printf '%s\n' "${new_values}"
+              echo "drift<<${delimiter}"
+              printf '%s\n' "${drift}"
               echo "${delimiter}"
             } >> "$GITHUB_OUTPUT"
           fi
@@ -127,11 +127,11 @@ jobs:
           fi
           docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.4 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}"
       - name: Run schema-gen
-        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.4
+        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.5
         with:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
@@ -157,6 +157,10 @@ jobs:
             new_version=$(grep -E "^appVersion:" "${subchart}" | awk '{print $NF}' || true)
             old_version=$(git show origin/main:"${subchart}" 2>/dev/null \
               | grep -E "^appVersion:" | awk '{print $NF}' || true)
+
+            # Strip surrounding quotes Helm allows around appVersion (e.g. "0.44.0").
+            new_version="${new_version//[\"\']/}"
+            old_version="${old_version//[\"\']/}"
 
             if [[ "${old_version}" == "${new_version}" ]]; then
               echo "No version change for ${dep} (${new_version}), skipping"
@@ -184,7 +188,7 @@ jobs:
           if [[ ${#args[@]} -gt 0 ]]; then
             docker run --rm \
               -v ${{ github.workspace }}:/workspace \
-              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.4 \
+              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.5 \
               --changelog-path /workspace/CHANGELOG.md \
               "${args[@]}"
           fi
@@ -202,13 +206,13 @@ jobs:
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git config --local user.name "HeraldBot[bot]"
           git add ${{ steps.chart.outputs.chart_dir }}/values.yaml ${{ steps.chart.outputs.chart_dir }}/values.schema.json CHANGELOG.md
-          git diff --cached --quiet || git commit -m "Sync values, schema and changelog from upstream"
+          git diff --cached --quiet || git commit -m "chore: sync values, schema and changelog from upstream"
           git push origin ${{ inputs.update_branch }}
 
   update-pr-description:
     runs-on: ubuntu-24.04
     needs: sync-and-update
-    if: needs.sync-and-update.outputs.entries != '' || needs.sync-and-update.outputs.new_values != ''
+    if: needs.sync-and-update.outputs.entries != '' || needs.sync-and-update.outputs.drift != ''
     steps:
       - name: Generate token
         id: generate_token
@@ -220,14 +224,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           ENTRIES: ${{ needs.sync-and-update.outputs.entries }}
-          NEW_VALUES: ${{ needs.sync-and-update.outputs.new_values }}
+          DRIFT: ${{ needs.sync-and-update.outputs.drift }}
         run: |
           body=""
           if [[ -n "${ENTRIES}" ]]; then
             body+="$(printf '### Changes\n\n%s\n' "${ENTRIES}")"
           fi
-          if [[ -n "${NEW_VALUES}" ]]; then
-            body+="$(printf '\n### New values\n\n```yaml\n%s\n```\n' "${NEW_VALUES}")"
+          if [[ -n "${DRIFT}" ]]; then
+            body+=$'\n## 🔄 Values from upstream chart have drifted\n\n'
+            body+=$'> [!WARNING]\n'
+            body+="> The upstream chart values changed relative to \`main\`. The sync tool only does a shallow pass"$'\n'
+            body+="> (top-level keys), so these changes are **not** applied automatically and must be reconciled manually."$'\n'
+            body+=$'> Review the drift below and update our overrides accordingly.\n\n'
+            body+=$'```text\n'
+            body+="${DRIFT}"
+            body+=$'\n```\n'
           fi
           gh pr edit '${{ inputs.update_branch }}' \
             --repo ${{ github.repository }} \
