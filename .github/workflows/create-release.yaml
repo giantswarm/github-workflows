@@ -333,7 +333,7 @@ jobs:
           - windows-amd64
     env:
       GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
-      GO_VERSION: 1.21.3
+      GO_VERSION: 1.26.3
       ARTIFACT_DIR: bin-dist
       TAG: v${{ needs.gather_facts.outputs.version }}
     needs:
