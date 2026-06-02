@@ -231,7 +231,14 @@ jobs:
             body+="$(printf '### Changes\n\n%s\n' "${ENTRIES}")"
           fi
           if [[ -n "${DRIFT}" ]]; then
-            body+="$(printf '\n## 🔄 Values from upstream chart have drifted\n\n> [!WARNING]\n> The upstream chart values changed relative to `main`. The sync tool only does a shallow pass (top-level keys), so these changes are **not** applied automatically and must be reconciled manually. Review the drift below and update our overrides accordingly.\n\n```text\n%s\n```\n' "${DRIFT}")"
+            body+=$'\n## 🔄 Values from upstream chart have drifted\n\n'
+            body+=$'> [!WARNING]\n'
+            body+="> The upstream chart values changed relative to \`main\`. The sync tool only does a shallow pass"$'\n'
+            body+="> (top-level keys), so these changes are **not** applied automatically and must be reconciled manually."$'\n'
+            body+=$'> Review the drift below and update our overrides accordingly.\n\n'
+            body+=$'```text\n'
+            body+="${DRIFT}"
+            body+=$'\n```\n'
           fi
           gh pr edit '${{ inputs.update_branch }}' \
             --repo ${{ github.repository }} \
