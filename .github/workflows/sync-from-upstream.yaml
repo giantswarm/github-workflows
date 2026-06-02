@@ -111,6 +111,7 @@ jobs:
             -e GIT_CONFIG_VALUE_0=/github/workspace \
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
             --show-git-diff \
+            --diff-base origin/main \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}" || true)
           echo "${drift}"
