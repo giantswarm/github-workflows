@@ -106,6 +106,9 @@ jobs:
           fi
           drift=$(docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
+            -e GIT_CONFIG_COUNT=1 \
+            -e GIT_CONFIG_KEY_0=safe.directory \
+            -e GIT_CONFIG_VALUE_0=/github/workspace \
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
             --show-git-diff \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
