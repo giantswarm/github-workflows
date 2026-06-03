@@ -257,6 +257,9 @@ jobs:
           body: ${{ steps.changelog_reader.outputs.changes }}
           tag: "v${{ needs.gather_facts.outputs.version }}"
           token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          # Mark release-candidate versions (vX.Y.Z-rc.N) as GitHub pre-releases
+          # so they don't surface as the repo's "Latest release".
+          prerelease: ${{ needs.gather_facts.outputs.is_rc == 'true' }}
           skipIfReleaseExists: true
 
   create-release-branch:
