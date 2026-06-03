@@ -10,6 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Fixed
 
+- `validate-changelog.yaml` now recognises release-candidate branches. It parses the release token from the segment after the last `#` (mirroring `create-release-pr.yaml`) instead of pattern-matching the whole branch, so it accepts the RC bump tokens (`major-rc`, `minor-rc`, `patch-rc`, `rc`, `rc-release`) and explicit RC versions (`#v1.2.3-rc.4`) in addition to the stable tokens. The changelog version regex now allows an optional `-rc.N` suffix. As a side effect this also fixes the prefix-less `release#<token>` naming scheme, which the previous `*#release#<token>` patterns never matched.
 - `create-release-pr.yaml`'s `check_skip` step no longer false-positively skips when an RC (or any) release branch is pushed from a base-branch HEAD that already carries a `Release-Workflow-Run:` trailer from a previous release. The trailer check now only applies when the release branch is actually ahead of the base (i.e., the workflow already committed to it), so freshly-pushed RC branches like `main#release#minor-rc` correctly proceed to create the release PR.
 - `create-release.yaml`'s `create-release-branch` job now pushes the new long-lived maintenance branch using the `TAYLORBOT_GITHUB_ACTION` token (same authenticated remote URL pattern used by every other push in the file), rather than a bare `git push origin` that silently fails when `persist-credentials: false` is set. This bug was pre-existing on `main` and would have silently skipped release-branch creation on every minor/major release.
 
