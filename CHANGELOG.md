@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-03
+
+### Fixed
+
+- `create-release.yaml`'s `create-release-branch` job now pushes the new long-lived maintenance branch using the `TAYLORBOT_GITHUB_ACTION` token (same authenticated remote URL pattern used by every other push in the file), rather than a bare `git push origin` that silently fails when `persist-credentials: false` is set. This bug was pre-existing on `main` and would have silently skipped release-branch creation on every minor/major release.
+
 ## 2026-06-01
 
 ### Changed

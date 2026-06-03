@@ -276,6 +276,10 @@ jobs:
       - name: Fetch all tags and branches
         run: "git fetch --all"
       - name: Create long-lived release branch
+        env:
+          REMOTE_REPO:
+            "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
+            github.repository }}.git"
         run: |
           set -euo pipefail
           current_version="${{ needs.gather_facts.outputs.version }}"
@@ -309,13 +313,13 @@ jobs:
           release_branch="release-v${parent_major}.${parent_minor}.x"
           echo "release_branch=$release_branch"
 
-          if git rev-parse --verify $release_branch ; then
+          if git rev-parse --verify "$release_branch" >/dev/null 2>&1; then
             echo "Release branch $release_branch already exists. Nothing to do here."
             exit 0
           fi
 
-          git branch $release_branch HEAD^
-          git push origin $release_branch
+          git branch "$release_branch" HEAD^
+          git push "${REMOTE_REPO}" "$release_branch"
 
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
