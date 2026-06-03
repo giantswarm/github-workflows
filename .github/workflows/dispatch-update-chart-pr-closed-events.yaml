@@ -20,8 +20,6 @@ permissions: {}
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Generate GitHub App token
         id: generate-token
@@ -32,26 +30,6 @@ jobs:
           owner: giantswarm
           repositories: ${{ inputs.target_repository }}
 
-      - name: Derive gitsemver dev-build identifiers
-        id: gitsemver-ids
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-          RAW_BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          # gitsemver embeds the committer date (in UTC) and the branch name in
-          # dev-build versions: "<base>-dev.<branch>.<YYYY-MM-DD>.<HH-MM-SS>".
-          # Reconstruct both so the central repo can match the chart tag to revert.
-          iso=$(gh api "repos/${REPOSITORY}/commits/${SHA}" --jq '.commit.committer.date')
-          commit_datetime=$(date -u -d "${iso}" +'%Y-%m-%d.%H-%M-%S')
-
-          # Sanitize the branch exactly like gitsemver: [^a-zA-Z0-9-]+ -> "-".
-          branch=$(printf '%s' "${RAW_BRANCH}" | sed -E 's/[^a-zA-Z0-9-]+/-/g')
-
-          echo "commit_datetime=${commit_datetime}" >> "$GITHUB_OUTPUT"
-          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
-
       - name: Dispatch PR closure to central repository
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
@@ -60,11 +38,5 @@ jobs:
           event-type: update-chart-pr-closed
           client-payload: |
             {
-              "repo": "${{ github.repository }}",
-              "pr_number": ${{ github.event.pull_request.number }},
-              "merged": ${{ github.event.pull_request.merged }},
-              "head_sha": "${{ github.event.pull_request.head.sha }}",
-              "merge_commit_sha": "${{ github.event.pull_request.merge_commit_sha }}",
-              "branch": "${{ steps.gitsemver-ids.outputs.branch }}",
-              "commit_datetime": "${{ steps.gitsemver-ids.outputs.commit_datetime }}"
+              "repo": "${{ github.repository }}"
             }
