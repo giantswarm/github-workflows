@@ -27,26 +27,53 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      contents: read
       statuses: read
     env:
       STATUS_TIMEOUT_MINUTES: ${{ inputs.status_timeout_minutes }}
     steps:
       - name: Generate GitHub App token
         id: generate-token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.HERALD_CLIENT_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
           owner: giantswarm
           repositories: ${{ inputs.target_repository }}
 
+      - name: Derive gitsemver dev-build identifiers
+        id: gitsemver-ids
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          RAW_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          # gitsemver embeds the committer date (in UTC) and the branch name in
+          # dev-build versions: "<base>-dev.<branch>.<YYYY-MM-DD>.<HH-MM-SS>".
+          # Reconstruct both so the central repo can match the pushed chart tag.
+          iso=$(gh api "repos/${REPOSITORY}/commits/${SHA}" --jq '.commit.committer.date')
+          commit_datetime=$(date -u -d "${iso}" +'%Y-%m-%d.%H-%M-%S')
+
+          # Sanitize the branch exactly like gitsemver: [^a-zA-Z0-9-]+ -> "-".
+          branch=$(printf '%s' "${RAW_BRANCH}" | sed -E 's/[^a-zA-Z0-9-]+/-/g')
+
+          echo "commit_datetime=${commit_datetime}" >> "$GITHUB_OUTPUT"
+          echo "branch=${branch}" >> "$GITHUB_OUTPUT"
+
       - name: Dispatch to central repository
-        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.generate-token.outputs.token }}
           repository: giantswarm/${{ inputs.target_repository }}
           event-type: update-chart
-          client-payload: '{"sha": "${{ github.sha }}", "repo": "${{ github.repository }}"}'
+          client-payload: |
+            {
+              "sha": "${{ github.sha }}",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ steps.gitsemver-ids.outputs.branch }}",
+              "commit_datetime": "${{ steps.gitsemver-ids.outputs.commit_datetime }}"
+            }
 
       - name: Wait for workflow status
         id: wait-status
@@ -95,9 +122,16 @@ jobs:
 
       - name: Dispatch workflow status to central repository
         if: always()
-        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
         with:
           token: ${{ steps.generate-token.outputs.token }}
           repository: giantswarm/${{ inputs.target_repository }}
           event-type: update-chart-status
-          client-payload: '{"sha": "${{ github.sha }}", "repo": "${{ github.repository }}", "status": "${{ steps.wait-status.outputs.result }}"}'
+          client-payload: |
+            {
+              "sha": "${{ github.sha }}",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ steps.gitsemver-ids.outputs.branch }}",
+              "commit_datetime": "${{ steps.gitsemver-ids.outputs.commit_datetime }}",
+              "status": "${{ steps.wait-status.outputs.result }}"
+            }

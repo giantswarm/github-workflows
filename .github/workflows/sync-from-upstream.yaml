@@ -111,6 +111,7 @@ jobs:
             -e GIT_CONFIG_VALUE_0=/github/workspace \
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
             --show-git-diff \
+            --diff-base origin/main \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}" || true)
           echo "${drift}"
@@ -239,9 +240,19 @@ jobs:
             body+="> The upstream chart values changed relative to \`main\`. The sync tool only does a shallow pass"$'\n'
             body+="> (top-level keys), so these changes are **not** applied automatically and must be reconciled manually."$'\n'
             body+=$'> Review the drift below and update our overrides accordingly.\n\n'
-            body+=$'```text\n'
-            body+="${DRIFT}"
-            body+=$'\n```\n'
+            drift_lines=$(printf '%s\n' "${DRIFT}" | wc -l | tr -d ' ')
+            if (( drift_lines > 30 )); then
+              body+=$'<details>\n'
+              body+="<summary>Show values drift (${drift_lines} lines)</summary>"$'\n\n'
+              body+=$'```text\n'
+              body+="${DRIFT}"
+              body+=$'\n```\n\n'
+              body+=$'</details>\n'
+            else
+              body+=$'```text\n'
+              body+="${DRIFT}"
+              body+=$'\n```\n'
+            fi
           fi
           gh pr edit '${{ inputs.update_branch }}' \
             --repo ${{ github.repository }} \
