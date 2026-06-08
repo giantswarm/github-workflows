@@ -89,22 +89,23 @@ jobs:
           sudo mv /tmp/vendir /usr/local/bin/vendir && chmod a+x /usr/local/bin/vendir
       - name: Run update
         run: |
-          # Define chart_dir
+          # Define chart name. The Makefile prepends the "helm/" prefix itself,
+          # so APPLICATION must be the bare chart name without it.
           repository="${{ needs.gather_facts.outputs.repo_name }}"
-          chart="helm/${repository}"
+          chart="${repository}"
 
           # Check chart directory.
-          if [ ! -d "${chart}" ]
+          if [ ! -d "helm/${chart}" ]
           then
-            echo "Could not find chart directory '${chart}', removing app suffix."
+            echo "Could not find chart directory 'helm/${chart}', removing app suffix."
 
             # Remove app suffix.
-            chart="helm/${repository%-app}"
+            chart="${repository%-app}"
 
-            if [ ! -d "${chart}" ]
+            if [ ! -d "helm/${chart}" ]
             then
               # Print error.
-              echo "Could not find chart directory '${chart}', doing nothing."
+              echo "Could not find chart directory 'helm/${chart}', doing nothing."
               exit 1
             fi
           fi
