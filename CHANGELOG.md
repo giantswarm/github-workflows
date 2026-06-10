@@ -11,6 +11,7 @@ Instead this file uses a date-based structure.
 ### Fixed
 
 - `update-chart` now uses the bare chart name instead of `helm/{{chart-name}}` since a new [devctl update](https://github.com/giantswarm/devctl/pull/1837) broke the current workflow.
+- Update GO_VERSION on documentation-validation workflow.
 
 ## 2026-05-27
 
