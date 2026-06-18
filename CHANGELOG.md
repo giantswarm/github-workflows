@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-18
+
+### Fixed
+
+- Download `architect` binary instead of tarball when installing it.
+
 ## 2026-06-08
 
 ### Fixed
