@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- `vulnerability-check.yaml` reusable workflow: runs `nancy sleuth` against the Go module graph (`go list -json -m all`) to flag dependencies with known vulnerabilities, honouring `.nancy-ignore` and `.nancy-ignore.generated`. Call it on `pull_request` and `merge_group` to gate the merge queue. Authenticates to OSS Index via the `NANCY_USER`/`NANCY_TOKEN` secrets and accepts an optional `OSSI_OSSINDEXURL` for a custom endpoint. A scanner outage exits `0` so it does not block merges.
+- `vulnerability-check.yaml` reusable workflow: runs `nancy sleuth` against the Go module graph (`go list -json -m all`) to flag dependencies with known vulnerabilities, honouring `.nancy-ignore` and `.nancy-ignore.generated`. Call it on `pull_request` and `merge_group` to gate the merge queue. Authenticates to OSS Index via the `NANCY_USER`/`NANCY_TOKEN` and `OSSI_OSSINDEXURL` secrets. A scanner outage exits `0` so it does not block merges.
 
 ## 2026-06-18
 
