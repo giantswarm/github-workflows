@@ -153,12 +153,21 @@ jobs:
           current=$(manifest_version "$base_branch")
           next=$(manifest_version "$head_branch")
 
-          IFS=. read -r cmaj cmin cpat <<<"$current"
-          IFS=. read -r nmaj nmin npat <<<"$next"
+          # release-please supports a "prerelease" versioning strategy that
+          # produces tags like 1.3.0-rc.1. Strip any pre-release suffix before
+          # the numeric compare so an RC-only step (1.3.0-rc.1 -> 1.3.0-rc.2)
+          # or the RC -> stable promotion (1.3.0-rc.2 -> 1.3.0) doesn't
+          # classify as bump=none and silently disable auto-merge. An RC-only
+          # change of the same X.Y.Z triple is treated as a patch-level bump.
+          current_core="${current%%-*}"
+          next_core="${next%%-*}"
+          IFS=. read -r cmaj cmin cpat <<<"$current_core"
+          IFS=. read -r nmaj nmin npat <<<"$next_core"
 
           if   [ "$nmaj" -gt "$cmaj" ]; then bump=major
           elif [ "$nmin" -gt "$cmin" ]; then bump=minor
           elif [ "$npat" -gt "$cpat" ]; then bump=patch
+          elif [ "$current" != "$next" ]; then bump=patch
           else bump=none
           fi
 

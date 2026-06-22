@@ -27,94 +27,103 @@ jobs:
   gather_facts:
     name: Gather facts
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     outputs:
-      repo_name: ${{ steps.gather_facts.outputs.repo_name }}
-      branch: ${{ steps.gather_facts.outputs.branch }}
-      base: ${{ steps.gather_facts.outputs.base }}
-      needs_major_bump: ${{ steps.gather_facts.outputs.needs_major_bump }}
+      repo_name: ${{ steps.parse.outputs.repo_name }}
+      branch: ${{ steps.parse.outputs.branch }}
+      base: ${{ steps.parse.outputs.base }}
+      needs_major_bump: ${{ steps.resolve.outputs.needs_major_bump }}
       skip: ${{ steps.check_skip.outputs.skip }}
-      version: ${{ steps.gather_facts.outputs.version }}
+      version: ${{ steps.resolve.outputs.version }}
+      is_rc: ${{ steps.resolve.outputs.is_rc }}
     steps:
-      - name: Gather facts
-        id: gather_facts
+      - name: Parse trigger
+        id: parse
+        env:
+          INPUT_BRANCH: ${{ inputs.branch }}
+          EVENT_REF: ${{ github.event.ref }}
+          EVENT_BASE_REF: ${{ github.event.base_ref }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          head="${{ inputs.branch || github.event.ref }}"
+          set -euo pipefail
+          head="${INPUT_BRANCH:-$EVENT_REF}"
           echo "branch=${head}" >> $GITHUB_OUTPUT
 
-          head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
-          if [[ $(echo "$head" | grep -o '#' | wc -l) -gt 1 ]]; then
-            base="$(echo $head | cut -d '#' -f 1)"
+          head_short="${head#refs/heads/}"
+          if [[ $(echo "$head_short" | grep -o '#' | wc -l) -gt 1 ]]; then
+            base="$(echo "$head_short" | cut -d '#' -f 1)"
           else
-            base="${{ github.event.base_ref }}"
+            base="${EVENT_BASE_REF}"
           fi
+          base="${base#refs/heads/}"
 
-          base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
+          token="$(echo "$head_short" | awk -F# '{print $NF}')"
+          repo_name="$(echo "$REPOSITORY" | awk -F '/' '{print $2}')"
 
-          version="$(echo $head | awk -F# '{print $NF}')"
-          if [[ $version =~ ^major|minor|patch$ ]]; then
-            gh auth login --with-token <<<$(echo -n ${{ secrets.TAYLORBOT_GITHUB_ACTION }})
-            gh_api_get_latest_release_version()
-            {
-              if ! version="$(gh api "repos/$1/releases/latest" --jq '.tag_name[1:] | split(".") | .[0], .[1], .[2]')"
-              then
-                case "$version" in
-                  *Not\ Found*) echo Assuming v0.0.0, hooray first release! >&2 ; version="0 0 0" ;;
-                  *) version="" ; return 1 ;;
-                esac
-              fi
-              echo "$version"
-            }
-
-            version_parts=($(gh_api_get_latest_release_version "${{ github.repository }}"))
-            version_major=${version_parts[0]}
-            version_minor=${version_parts[1]}
-            version_patch=${version_parts[2]}
-            case ${version} in
-              patch)
-                version_patch=$((version_patch+1))
-                ;;
-              minor)
-                version_minor=$((version_minor+1))
-                version_patch=0
-                ;;
-              major)
-                version_major=$((version_major+1))
-                version_minor=0
-                version_patch=0
-                if [[ "${version_major}" != "1" ]]; then
-                  echo "needs_major_bump=true" >> $GITHUB_OUTPUT
-                fi
-                ;;
-              *)
-                echo "Unknown Semver level provided"
-                exit 1
-                ;;
-            esac
-            version="${version_major}.${version_minor}.${version_patch}"
-          else
-            version="${version#v}" # Strip "v" prefix.
-            version_major=$(echo "${version}" | cut -d "." -f 1)
-            version_minor=$(echo "${version}" | cut -d "." -f 2)
-            version_patch=$(echo "${version}" | cut -d "." -f 3)
-            # This will help us detect versions with suffixes as majors, i.e 3.0.0-alpha1.
-            # Even though it's a pre-release, it's still a major.
-            if [[ $version_minor = 0 && $version_patch =~ ^0.* && $version_major != 1 ]]; then
-              echo "needs_major_bump=true" >> $GITHUB_OUTPUT
-            fi
-          fi
-          repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
-          echo "repo_name=\"$repo_name\" base=\"$base\" head=\"$head\" version=\"$version\""
-          echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
-          echo "head=${head}" >> $GITHUB_OUTPUT
+          echo "token=${token}" >> $GITHUB_OUTPUT
+          echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
+          echo "branch=${head}  base=${base}  token=${token}  repo=${repo_name}"
+
+      - name: Checkout base
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ steps.parse.outputs.base }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install gitsemver
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
+          version: "2.0.0"
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          tarball_binary_path: "*/${binary}"
+          smoke_test: "${binary} --version"
+
+      - name: Resolve version
+        id: resolve
+        env:
+          TOKEN: ${{ steps.parse.outputs.token }}
+        run: |
+          set -euo pipefail
+          bump_tokens='^(major|minor|patch|major-rc|minor-rc|patch-rc|rc|rc-release)$'
+          if [[ "$TOKEN" =~ $bump_tokens ]]; then
+            version="$(gitsemver next "$TOKEN")"
+          else
+            candidate="${TOKEN#v}"
+            if ! gitsemver validate --type any "$candidate" >/dev/null 2>&1; then
+              echo "::error::Invalid version '$candidate' (must be valid semver per gitsemver)"
+              exit 1
+            fi
+            version="$candidate"
+          fi
+          echo "version=${version}"
           echo "version=${version}" >> $GITHUB_OUTPUT
+
+          # Detect a "new major" release (including its RC) for the go.mod
+          # upgrade step downstream. A "new major" means X.0.0 (or X.0.0-rc.N)
+          # with X > 1; X=1 is excluded to preserve legacy behaviour.
+          core="${version%%-*}"
+          IFS=. read -r vmaj vmin vpat <<<"$core"
+          if [[ "$vmin" = "0" && "$vpat" = "0" && "$vmaj" != "1" && "$vmaj" -gt 0 ]]; then
+            echo "needs_major_bump=true" >> $GITHUB_OUTPUT
+          fi
+
+          is_rc=false
+          if gitsemver validate --type rc "$version" >/dev/null 2>&1; then
+            is_rc=true
+          fi
+          echo "is_rc=${is_rc}" >> $GITHUB_OUTPUT
 
       - name: Check if workflow should be skipped
         id: check_skip
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
-          head="${{ steps.gather_facts.outputs.branch }}"
+          head="${{ steps.parse.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
 
           # Check if PR already exists
@@ -124,12 +133,19 @@ jobs:
             exit 0
           fi
 
-          # Check if the triggering commit was created by this workflow (has our trailer)
-          commit_message=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq '.commit.message' 2>/dev/null || echo "")
-          if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
-            echo "Triggering commit was created by release workflow, skipping"
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
+          # Check if the triggering commit was created by this workflow (has our trailer).
+          # Only apply this check when the release branch is ahead of the base — if
+          # ahead_by is 0, the branch was just created from the base and the trailer
+          # (if present) belongs to a previous unrelated release on the base branch.
+          base="${{ steps.parse.outputs.base }}"
+          ahead_by=$(gh api "repos/${{ github.repository }}/compare/${base}...${branch}" --jq '.ahead_by' 2>/dev/null || echo "0")
+          if [[ "$ahead_by" -gt "0" ]]; then
+            commit_message=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq '.commit.message' 2>/dev/null || echo "")
+            if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
+              echo "Triggering commit was created by release workflow, skipping"
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
           fi
 
           echo "skip=false" >> $GITHUB_OUTPUT
