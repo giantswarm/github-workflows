@@ -23,7 +23,7 @@ on:
         required: true
       NANCY_USER:
         description: Nancy user used to access the OSS Index database
-        required: true
+        required: false
 
 permissions: {}
 
@@ -98,6 +98,7 @@ jobs:
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
           OSSI_TOKEN: ${{ secrets.NANCY_TOKEN }}
+          GUIDE_TOKEN: ${{ secrets.NANCY_TOKEN }}
           LOG_LEVEL: ${{ inputs.log_level || 'info' }}
 
       - name: Set up git identity
