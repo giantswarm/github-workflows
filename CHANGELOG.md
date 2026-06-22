@@ -44,6 +44,12 @@ Instead this file uses a date-based structure.
 
 - `create-release.yaml` no longer recognises the legacy "reference version" form `vX.Y.Z-N` (e.g. `v1.2.3-4`) — the dedicated `ref_version` job and its special-case regex are gone. Any repo still pushing such tags via this workflow will need to migrate to the RC form (`vX.Y.Z-rc.N`).
 - `create-release.yaml` and `create-release-pr.yaml` no longer install `fsaintjacques/semver-tool`; all next-version arithmetic now goes through `gitsemver` (or bash parameter expansion on a version string already validated by it).
+## 2026-06-18
+
+### Fixed
+
+- Download `architect` binary instead of tarball when installing it.
+
 ## 2026-06-08
 
 ### Fixed
