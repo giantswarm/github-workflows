@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-24
+
+### Security
+
+- Fixed a GitHub Actions script injection (CWE-94) in the `debug_info` "Print github context JSON" step of `create-release.yaml`, `create-release-pr.yaml`, `update-chart.yaml` and `ensure-major-version-tags.yaml`. The step interpolated `${{ toJson(github) }}` directly into a `run:` shell heredoc, so attacker-controllable event fields (e.g. a commit message containing an `EOF` line plus shell commands) could break out of the heredoc and execute arbitrary commands on the runner. The context is now passed through an `env:` variable (`GITHUB_CONTEXT`) and printed with `echo "$GITHUB_CONTEXT"`, treating it as data rather than script text — the same safe pattern already used for `COMMIT_MESSAGE` in `create-release.yaml`. Reported via giantswarm/giantswarm#36940.
+
+### Added
+
+- `validate-workflows.yaml` now runs a report-only [`zizmor`](https://github.com/zizmorcore/zizmor-action) security scan on this repository's own workflows. It uploads findings to the GitHub Security tab (code scanning) for visibility but does not block PRs (`continue-on-error: true`), so regressions of the script-injection class above are surfaced even though CodeQL did not catch them.
+
 ## 2026-06-03
 
 ### Fixed

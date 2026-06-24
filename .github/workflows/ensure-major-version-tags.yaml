@@ -11,10 +11,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Print github context JSON
-        run: |
-          cat <<EOF
-          ${{ toJson(github) }}
-          EOF
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
   ensure_major_version_tags:
     name: Ensure major version tags
     runs-on: ubuntu-24.04
