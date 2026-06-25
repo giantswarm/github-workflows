@@ -15,7 +15,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Validate YAML
         run: |
@@ -54,3 +54,26 @@ jobs:
         with:
           show-ascii-art: false
           path-to-workflows: '.github/workflows/*.yaml'
+
+  analyze-actions:
+    name: Analyze workflows with zizmor (report-only)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the Security tab (code scanning is enabled)
+      actions: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Report-only: zizmor uploads findings to the Security tab for visibility but never
+      # blocks PRs. The repo carries pre-existing findings that are tracked separately; this
+      # scan is here to surface regressions (e.g. re-introducing `${{ toJson(github) }}` in a
+      # `run:` block) that CodeQL did not catch. See giantswarm/giantswarm#36940.
+      - name: Run zizmor (non-blocking)
+        continue-on-error: true
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
+        with:
+          persona: regular

@@ -6,11 +6,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-24
+
+### Security
+
+- Fixed a GitHub Actions script injection (CWE-94) in the `debug_info` "Print github context JSON" step of `create-release.yaml`, `create-release-pr.yaml`, `update-chart.yaml` and `ensure-major-version-tags.yaml`. The step interpolated `${{ toJson(github) }}` directly into a `run:` shell heredoc, so attacker-controllable event fields (e.g. a commit message containing an `EOF` line plus shell commands) could break out of the heredoc and execute arbitrary commands on the runner. The context is now passed through an `env:` variable (`GITHUB_CONTEXT`) and printed with `echo "$GITHUB_CONTEXT"`, treating it as data rather than script text — the same safe pattern already used for `COMMIT_MESSAGE` in `create-release.yaml`. Reported via giantswarm/giantswarm#36940.
+
+### Added
+
+- `validate-workflows.yaml` now runs a report-only [`zizmor`](https://github.com/zizmorcore/zizmor-action) security scan on this repository's own workflows. It uploads findings to the GitHub Security tab (code scanning) for visibility but does not block PRs (`continue-on-error: true`), so regressions of the script-injection class above are surfaced even though CodeQL did not catch them.
+
+## 2026-06-03
+
+### Fixed
+
+- `create-release.yaml` now marks release-candidate releases (`vX.Y.Z-rc.N`) as GitHub pre-releases by passing `prerelease` to `ncipollo/release-action`, derived from the existing `gather_facts.is_rc` output. Previously RC tags were published as full releases and could become the repo's "Latest release".
+- `validate-changelog.yaml` now recognises release-candidate branches. It parses the release token from the segment after the last `#` (mirroring `create-release-pr.yaml`) instead of pattern-matching the whole branch, so it accepts the RC bump tokens (`major-rc`, `minor-rc`, `patch-rc`, `rc`, `rc-release`) and explicit RC versions (`#v1.2.3-rc.4`) in addition to the stable tokens. The changelog version regex now allows an optional `-rc.N` suffix. As a side effect this also fixes the prefix-less `release#<token>` naming scheme, which the previous `*#release#<token>` patterns never matched.
+- `create-release-pr.yaml`'s `check_skip` step no longer false-positively skips when an RC (or any) release branch is pushed from a base-branch HEAD that already carries a `Release-Workflow-Run:` trailer from a previous release. The trailer check now only applies when the release branch is actually ahead of the base (i.e., the workflow already committed to it), so freshly-pushed RC branches like `main#release#minor-rc` correctly proceed to create the release PR.
+- `create-release.yaml`'s `create-release-branch` job now pushes the new long-lived maintenance branch using the `TAYLORBOT_GITHUB_ACTION` token (same authenticated remote URL pattern used by every other push in the file), rather than a bare `git push origin` that silently fails when `persist-credentials: false` is set. This bug was pre-existing on `main` and would have silently skipped release-branch creation on every minor/major release.
+
+## 2026-06-01
+
+### Changed
+
+- `create-release-pr.yaml` and `create-release.yaml` install [`giantswarm/gitsemver`](https://github.com/giantswarm/gitsemver) `v1.1.2` via `giantswarm/install-binary-action` (the same mechanism already used for `architect` and Renovate-tracked), replacing the short-lived local composite action `.github/actions/gitsemver-install`. A local composite referenced as `uses: ./.github/actions/...` does not resolve inside a reusable (`workflow_call`) workflow — the runner looks the path up in the **caller** repository's checkout, not in `github-workflows` — so it failed for every consumer of these workflows. `v1.1.2` also fixes the `gitsemver --version` self-info flag, which the install step's smoke test now uses. This aligns these workflows with `architect-orb` v9.0.0, where `gitsemver` is the single source of git-based semver.
+- `create-release.yaml`'s build-artifacts job keeps installing `architect` purely as a transition aid: consumer Makefiles still on the pre-gitsemver `devctl` template stamp release artifacts with `VERSION := $(shell architect project version)`. `devctl`'s current `Makefile.gen.go.mk` template uses `gitsemver version` (already installed in that job), so the `architect` install becomes removable once all consumers regenerate their Makefile. No version or git tag in these workflows is produced by `architect` — `gitsemver` is the sole source (`architect prepare-release` only consumes the already-resolved `--version`).
+
+### Removed
+
+- `create-release.yaml` no longer installs the `architect` binary in the `update_project_go` job. It was installed but never invoked — the post-release `-dev` bump of `project.go` is computed entirely with `gitsemver next patch` plus a `sed` rewrite.
+- `create-release.yaml` drops the leftover `needs.gather_facts.outputs.ref_version != 'true'` guards on the `update_project_go` job and the `Ensure correct version in project.go` step. The `ref_version` output was removed together with the legacy reference-version handling, so the guards always evaluated truthy and only obscured the real conditions.
+
 ## 2026-05-29
 
 ### Added
 
 - Add reusable workflow `yaml-diff.yaml`. Posts a semantic YAML diff (via `dyff`) of source files changed in a PR as a sticky PR comment. Key reordering without value changes is ignored, so reviewers see only meaningful changes. Companion to `helm-render-diff.yaml` (which diffs rendered Helm output rather than source). Shares the `/no_diffs_printing` opt-out with the helm workflow. Enables consumers to drop alphabetical-key-ordering enforcement from their YAML linters without losing diff readability (see [giantswarm/roadmap#4121](https://github.com/giantswarm/roadmap/issues/4121)).
+
+## 2026-05-28
+
+### Added
+
+- `create-release-pr.yaml` accepts new bump tokens on the trigger branch (`branch#<token>`): `patch-rc`, `minor-rc`, `major-rc`, `rc`, `rc-release`. They are passed verbatim to `gitsemver next` and produce release-candidate versions like `v1.3.0-rc.1`, `v1.3.0-rc.2`, then `v1.3.0` via `rc-release`. The existing `patch` / `minor` / `major` tokens continue to work unchanged.
+- `create-release.yaml` exposes a new `is_rc` output on its `gather_facts` job (true when the released tag is an RC per `gitsemver validate --type rc`).
+
+### Changed
+
+- `create-release-pr.yaml` now computes the next version with `gitsemver next <token>` instead of the inline `gh api releases/latest` + manual increment. Explicit-version trigger branches (`branch#vX.Y.Z[-rc.N]`) are now validated by `gitsemver validate --type any` and rejected on invalid input — strings that previously slipped through the loose regex (e.g. `1.2.3.foo`) are now hard failures with a clear error. The job now checks out the base branch with `fetch-depth: 0` and `persist-credentials: false` so gitsemver can see full tag history.
+- `create-release.yaml` validates the version parsed from the release-PR commit title with `gitsemver` rather than an inline regex. RC tags (`vX.Y.Z-rc.N`) are first-class: they create the tag and GH release like a stable version, and they DO still trigger the post-release `-dev` bump of `project.go` (the new dev string targets the stable the RC is leading toward, e.g. `1.3.0-rc.1` ➝ `1.3.0-dev`). The long-lived `release-vX.Y.x` branch is only cut for stable major/minor releases — RC releases skip that job.
+- `release.yaml` (release-please) auto-merge reconciler now strips any pre-release suffix from the manifest versions before the numeric `X.Y.Z` compare, so a `1.3.0-rc.1 → 1.3.0-rc.2` PR (or an RC ➝ stable promotion) is classified as `bump=patch` rather than silently `bump=none`. Auto-merge therefore honours the configured `auto-merge-level` ceiling on RC PRs too. Consumers wanting RC support on this path enable it in their own `release-please-config.json` with `"versioning": "prerelease"`, `"prerelease": true`, `"prerelease-type": "rc"` — `release.yaml` itself stays single-code-path.
+
+### Removed
+
+- `create-release.yaml` no longer recognises the legacy "reference version" form `vX.Y.Z-N` (e.g. `v1.2.3-4`) — the dedicated `ref_version` job and its special-case regex are gone. Any repo still pushing such tags via this workflow will need to migrate to the RC form (`vX.Y.Z-rc.N`).
+- `create-release.yaml` and `create-release-pr.yaml` no longer install `fsaintjacques/semver-tool`; all next-version arithmetic now goes through `gitsemver` (or bash parameter expansion on a version string already validated by it).
+## 2026-06-18
+
+### Fixed
+
+- Download `architect` binary instead of tarball when installing it.
+
+## 2026-06-08
+
+### Fixed
+
+- `update-chart` now uses the bare chart name instead of `helm/{{chart-name}}` since a new [devctl update](https://github.com/giantswarm/devctl/pull/1837) broke the current workflow.
+- Update GO_VERSION on documentation-validation workflow.
 
 ## 2026-05-27
 

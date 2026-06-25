@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -31,12 +31,22 @@ jobs:
 
           version=""
 
-          # Use case statement for more reliable pattern matching
-          case "$branch_name" in
-            *"#release#v"*)
-              # Extract version from patterns like main#release#v1.2.3
-              version=$(echo "$branch_name" | sed -E 's/.*#release#v([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-              if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          # The release token is the segment after the last '#', mirroring how
+          # create-release-pr.yaml parses it (awk -F# '{print $NF}'). This makes
+          # matching independent of the base-branch prefix, so both naming schemes
+          # work: "main#release#minor-rc" and the prefix-less "release#minor-rc".
+          token="${branch_name##*#}"
+          echo "Release token: $token"
+
+          version=""
+
+          # A semver core (X.Y.Z) may carry an optional release-candidate suffix
+          # (-rc.N) that gitsemver produces, so the version patterns allow it.
+          case "$token" in
+            v[0-9]*)
+              # Explicit version token like v1.2.3 or v1.2.3-rc.4
+              version="${token#v}"
+              if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
                 echo "Extracted explicit version: $version"
               else
                 echo "::error::Failed to extract version from: $branch_name"
@@ -44,18 +54,20 @@ jobs:
               fi
               ;;
 
-            *"#release#major"|*"#release#minor"|*"#release#patch")
-              # Extract bump type and get version from changelog
-              bump_type=$(echo "$branch_name" | sed -E 's/.*#release#(major|minor|patch).*/\1/')
-              echo "🔍 Detected semantic version branch ($bump_type), extracting version from changelog..."
+            major|minor|patch|major-rc|minor-rc|patch-rc|rc|rc-release)
+              # Bump-token branch: the concrete version was resolved by gitsemver
+              # and written into the changelog by architect, so read it from there.
+              # This covers both stable bumps and their RC variants uniformly.
+              echo "🔍 Detected bump-token release branch ($token), extracting version from changelog..."
 
               if [ ! -f "CHANGELOG.md" ]; then
                 echo "::error::CHANGELOG.md not found"
                 exit 1
               fi
 
-              # Get the first version entry (should be the newest one that architect created)
-              version=$(grep -E "^## \[[0-9]+\.[0-9]+\.[0-9]+\]" CHANGELOG.md | head -1 | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+)\].*/\1/')
+              # Get the first version entry (should be the newest one that architect
+              # created); allow an optional -rc.N suffix for release candidates.
+              version=$(grep -E "^## \[[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?\]" CHANGELOG.md | head -1 | sed -E 's/^## \[([0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)\].*/\1/')
 
               if [ -z "$version" ]; then
                 echo "::error::Could not find version in CHANGELOG.md"
@@ -65,20 +77,16 @@ jobs:
                 exit 1
               fi
 
-              echo "Extracted version from changelog for $bump_type release: $version"
+              echo "Extracted version from changelog for $token release: $version"
               ;;
 
             *)
-              echo "::error::Could not extract version from branch name: $branch_name"
-              echo "::error::Expected patterns:"
-              echo "  - main#release#v1.2.3"
-              echo "  - main#release#major"
-              echo "  - main#release#minor"
-              echo "  - main#release#patch"
-              echo "  - master#release#v1.2.3"
-              echo "  - master#release#major|minor|patch"
-              echo "  - release#v1.2.3"
-              echo "  - release#major|minor|patch"
+              echo "::error::Could not extract version from branch name: $branch_name (token: $token)"
+              echo "::error::Expected the branch to end in one of:"
+              echo "  - #v1.2.3 (optionally -rc.N, e.g. #v1.2.3-rc.4)"
+              echo "  - #major | #minor | #patch"
+              echo "  - #major-rc | #minor-rc | #patch-rc"
+              echo "  - #rc | #rc-release"
               exit 1
               ;;
           esac

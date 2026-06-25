@@ -23,7 +23,7 @@ on:
         required: true
       NANCY_USER:
         description: Nancy user used to access the OSS Index database
-        required: true
+        required: false
 
 permissions: {}
 
@@ -38,7 +38,7 @@ jobs:
       skip: ${{ steps.gather_facts.outputs.skip }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.branch || github.ref }}
       - name: Gather facts
@@ -78,7 +78,7 @@ jobs:
           private-key: ${{ secrets.HERALD_APP_KEY }}
 
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           token: ${{ steps.generate_token.outputs.token }}
           persist-credentials: false
@@ -93,11 +93,12 @@ jobs:
           git pull origin "${branch}" || true
 
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.7.1
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.10.1
         timeout-minutes: 20
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
           OSSI_TOKEN: ${{ secrets.NANCY_TOKEN }}
+          GUIDE_TOKEN: ${{ secrets.NANCY_TOKEN }}
           LOG_LEVEL: ${{ inputs.log_level || 'info' }}
 
       - name: Set up git identity
