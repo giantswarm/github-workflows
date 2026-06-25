@@ -37,6 +37,12 @@ Instead this file uses a date-based structure.
 - `create-release.yaml` no longer installs the `architect` binary in the `update_project_go` job. It was installed but never invoked — the post-release `-dev` bump of `project.go` is computed entirely with `gitsemver next patch` plus a `sed` rewrite.
 - `create-release.yaml` drops the leftover `needs.gather_facts.outputs.ref_version != 'true'` guards on the `update_project_go` job and the `Ensure correct version in project.go` step. The `ref_version` output was removed together with the legacy reference-version handling, so the guards always evaluated truthy and only obscured the real conditions.
 
+## 2026-05-29
+
+### Added
+
+- Add reusable workflow `yaml-diff.yaml`. Posts a semantic YAML diff (via `dyff`) of source files changed in a PR as a sticky PR comment. Key reordering without value changes is ignored, so reviewers see only meaningful changes. Companion to `helm-render-diff.yaml` (which diffs rendered Helm output rather than source). Shares the `/no_diffs_printing` opt-out with the helm workflow. Enables consumers to drop alphabetical-key-ordering enforcement from their YAML linters without losing diff readability (see [giantswarm/roadmap#4121](https://github.com/giantswarm/roadmap/issues/4121)).
+
 ## 2026-05-28
 
 ### Added
