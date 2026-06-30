@@ -24,7 +24,8 @@ on:
         default: "**/*.enc.yaml .github/** .pre-commit-config.yaml"
         description: >-
           Space-separated glob patterns to exclude. Patterns ending in `/**` match a directory
-          prefix; patterns without `/` match by basename; otherwise exact path match.
+          prefix; patterns of the form `**/<glob>` match `<glob>` against the basename at any
+          depth; patterns without `/` match by basename; otherwise exact path match.
           SOPS-encrypted files must remain excluded.
 
 permissions: {}
@@ -106,18 +107,24 @@ jobs:
           read -r -a path_globs <<< "${PATHS}"
           read -r -a exclude_globs <<< "${EXCLUDE_PATHS}"
 
-          # Exclude matcher. Handles three common pattern shapes:
+          # Exclude matcher. Handles these pattern shapes:
           #   foo/**             — directory prefix
+          #   **/*.something     — basename glob at any depth
           #   *.something        — basename match (no slash in pattern)
           #   anything else      — exact path match
           should_exclude() {
             local path="$1"
-            local g prefix
+            local g prefix base_glob
             for g in "${exclude_globs[@]}"; do
               if [[ "${g}" == */"**" ]]; then
                 prefix="${g%/**}"
                 [[ "${path}" == "${prefix}/"* ]] && return 0
                 [[ "${path}" == "${prefix}" ]] && return 0
+              elif [[ "${g}" == "**/"* && "${g#**/}" != *"/"* ]]; then
+                # `**/<glob>` — match <glob> against the basename at any depth (e.g. `**/*.enc.yaml`)
+                base_glob="${g#**/}"
+                # shellcheck disable=SC2053
+                [[ "$(basename "${path}")" == ${base_glob} ]] && return 0
               elif [[ "${g}" != *"/"* ]]; then
                 # shellcheck disable=SC2053
                 [[ "$(basename "${path}")" == ${g} ]] && return 0
