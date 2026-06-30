@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-06-30
+
+### Fixed
+
+- `yaml-diff.yaml`'s `should_exclude()` now correctly excludes the default `**/*.enc.yaml` (SOPS) pattern. Patterns containing a `/` but not ending in `/**` fell through to a quoted, non-glob exact-match comparison that never matched, so SOPS-encrypted files were diffed and their contents posted as PR comments — the opposite of the documented default. A new matcher branch handles the `**/<glob>` shape by matching `<glob>` against the basename at any depth. Verified end-to-end against giantswarm/gitops-template#136.
+
 ## 2026-06-24
 
 ### Security
