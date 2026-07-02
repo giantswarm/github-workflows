@@ -1,0 +1,260 @@
+name: GitOps Validate
+
+# Reusable workflow for validating a GitOps repository created from
+# giantswarm/gitops-template. It runs the repo's pre-commit hooks, its
+# `./tools/test-all-ff validate`, posts a rendered-manifest dyff comment, and
+# runs the `tests/ats` kind-based e2e suite.
+#
+# A called (workflow_call) workflow checks out the *caller* repository, so
+# `tools/test-all-ff` and `tests/ats` resolve against the consumer with no
+# extra wiring. Consumers pass the GITOPS_MASTER_GPG_KEY secret and may
+# override the tool-version / gitops-* inputs (defaults match gitops-template).
+
+on:
+  workflow_call:
+    inputs:
+      kubeconform_ver:
+        type: string
+        default: "0.4.13"
+        description: "kubeconform release version to install."
+      dyff_ver:
+        type: string
+        default: "1.7.1"
+        description: "dyff release version to install."
+      clusterctl_ver:
+        type: string
+        default: "1.2.0"
+        description: "clusterctl release version to install."
+      apptestctl_ver:
+        type: string
+        default: "0.18.0"
+        description: "apptestctl release version to install."
+      kind_ver:
+        type: string
+        default: "0.12.0"
+        description: "kind release version for the e2e cluster."
+      gitops_flux_app_version:
+        type: string
+        default: "1.10.0"
+        description: "Flux app version used by the e2e tests."
+      gitops_init_namespaces:
+        type: string
+        default: "default,org-org-name"
+        description: "Namespaces the e2e tests initialise."
+      gitops_ignored_objects:
+        type: string
+        default: "org-org-name/clusters-mapi-out-of-band-no-flux-direct"
+        description: "Objects the e2e tests ignore."
+      python_version:
+        type: string
+        default: "3.9"
+        description: "Python version for the e2e test suite."
+    secrets:
+      GITOPS_MASTER_GPG_KEY:
+        required: true
+        description: "Master GPG key used by the e2e tests to decrypt SOPS-encrypted fixtures."
+
+permissions: {}
+
+jobs:
+  check-pre-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - run: sudo snap install shfmt
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - name: cache pre-commit environment
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-gitops-validate-${{ hashFiles('.pre-commit-config.yaml') }}
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+
+  validate:
+    needs: check-pre-commit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GITOPS_FLUX_APP_VERSION: ${{ inputs.gitops_flux_app_version }}
+      GITOPS_INIT_NAMESPACES: ${{ inputs.gitops_init_namespaces }}
+      GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
+    steps:
+      - run: sudo apt-get install -y yamllint
+      - run: curl -s https://fluxcd.io/install.sh | sudo bash
+      - uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: kubeconform
+          download_url: "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz"
+          smoke_test: "${binary} -v"
+          tarball_binary_path: "${binary}"
+          version: ${{ inputs.kubeconform_ver }}
+      - name: cache validation tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-gitops-validate-${{ hashFiles('.pre-commit-config.yaml') }}
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: run validation
+        uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0 # v2.0.0
+        id: validate
+        with:
+          run: "./tools/test-all-ff validate"
+      - name: Find validation comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        # Always look up the previous validation comment, whether validation passed or not.
+        # See: https://docs.github.com/en/actions/learn-github-actions/expressions#always
+        if: always() && github.ref_name != 'main'
+        continue-on-error: true
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: Validation output log
+      - name: Delete old comment
+        uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
+        if: always() && github.ref_name != 'main'
+        continue-on-error: true
+        with:
+          type: delete
+          comment_id: ${{ steps.fc.outputs.comment-id }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create or update validation comment
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        if: always() && github.ref_name != 'main'
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <details>
+            <summary> Validation output log </summary>
+            <!-- mandatory empty line -->
+
+            ```
+            ${{ steps.validate.outputs.stdout }}
+            ```
+
+            </details>
+            <!-- mandatory empty line -->
+
+  get-diff:
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GITOPS_FLUX_APP_VERSION: ${{ inputs.gitops_flux_app_version }}
+      GITOPS_INIT_NAMESPACES: ${{ inputs.gitops_init_namespaces }}
+      GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
+    steps:
+      - run: sudo apt-get install -y yamllint
+      - run: curl -s https://fluxcd.io/install.sh | sudo bash
+      - name: install dyff
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: dyff
+          download_url: "https://github.com/homeport/dyff/releases/download/v${version}/dyff_${version}_linux_amd64.tar.gz"
+          smoke_test: "${binary} version"
+          tarball_binary_path: "${binary}"
+          version: ${{ inputs.dyff_ver }}
+      - run: which dyff
+      - uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: kubeconform
+          download_url: "https://github.com/yannh/kubeconform/releases/download/v${version}/kubeconform-linux-amd64.tar.gz"
+          smoke_test: "${binary} -v"
+          tarball_binary_path: "${binary}"
+          version: ${{ inputs.kubeconform_ver }}
+      - run: which kubeconform
+      - run: ls -la /opt/hostedtoolcache
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: template all for the new branch
+        run: ./tools/test-all-ff template > /tmp/new.yaml
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: "main"
+          path: "old"
+      - name: template all for the old branch
+        run: cd old/ && ../tools/test-all-ff template > /tmp/old.yaml && cd ..
+      - name: save the diff
+        uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0 # v2.0.0
+        id: diff
+        with:
+          run: 'dyff between -s -i -b -g /tmp/old.yaml /tmp/new.yaml && echo "No diff detected" || if [[ $? -eq 255 ]]; then echo "Diff error"; fi;'
+      - name: Find diff comment
+        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        continue-on-error: true
+        id: fc
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: "github-actions[bot]"
+          body-includes: Rendered manifest diff output log
+      - name: Delete old comment
+        uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
+        continue-on-error: true
+        with:
+          type: delete
+          comment_id: ${{ steps.fc.outputs.comment-id }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create or update diff comment
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            <details>
+            <summary> Rendered manifest diff output log </summary>
+            <!-- mandatory empty line -->
+
+            ```
+            ${{ steps.diff.outputs.stdout }}
+            ```
+
+            </details>
+            <!-- mandatory empty line -->
+
+  test_on_kind:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GITOPS_FLUX_APP_VERSION: ${{ inputs.gitops_flux_app_version }}
+      GITOPS_INIT_NAMESPACES: ${{ inputs.gitops_init_namespaces }}
+      GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: install apptestctl
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: apptestctl
+          download_url: "https://github.com/giantswarm/apptestctl/releases/download/v${version}/apptestctl-v${version}-linux-amd64.tar.gz"
+          smoke_test: "${binary} version"
+          tarball_binary_path: "apptestctl-v${version}-linux-amd64/${binary}"
+          version: ${{ inputs.apptestctl_ver }}
+      - name: install clusterctl
+        run: curl -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v${{ inputs.clusterctl_ver }}/clusterctl-linux-amd64 -o /usr/local/bin/clusterctl && chmod +x /usr/local/bin/clusterctl && clusterctl version
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          version: "v${{ inputs.kind_ver }}"
+      - name: extract kind kube.config
+        run: kind get kubeconfig --name 'chart-testing' > /tmp/kube.config
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "${{ inputs.python_version }}"
+      - name: Install pipenv
+        run: python -m pip install --upgrade pipenv
+      - name: install pipenv environment
+        run: cd tests/ats && pipenv install --deploy
+      - name: run tests
+        run: cd tests/ats && pipenv run pytest .
+        env:
+          KUBECONFIG: /tmp/kube.config
+          GITOPS_REPO_BRANCH: "${{ github.head_ref || github.ref_name }}"
+          GITOPS_REPO_URL: "${{ github.server_url }}/${{ github.repository }}"
+          GITOPS_MASTER_GPG_KEY: "${{ secrets.GITOPS_MASTER_GPG_KEY }}"
