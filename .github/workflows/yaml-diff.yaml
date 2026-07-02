@@ -188,7 +188,7 @@ jobs:
             section=$(mktemp)
             {
               echo
-              echo "=== ${path} ==="
+              echo "@@ ${path} @@"
               cat /tmp/yaml-diff/file-diff
             } > "${section}"
 
@@ -227,8 +227,15 @@ jobs:
               echo "<summary>Output</summary>"
               echo "<!-- mandatory empty line -->"
               echo
-              echo '```'
-              cat /tmp/yaml-diff/body
+              echo '```diff'
+              # GitHub colours a `diff` fence by line prefix: `-` red, `+` green,
+              # `@@ … @@` header. dyff go-patch prefixes changed values with an
+              # *indented* `-`/`+`; move the marker to column 0 while keeping the
+              # original indent *after* it, so the highlighter fires and nesting is
+              # still visible. The rewrite only reorders leading whitespace, so byte
+              # counts (and the truncation maths above) are unchanged. dyff colour
+              # stays off (auto-off in CI) — comments cannot render ANSI.
+              sed -E 's/^([[:space:]]*)([+-])([[:space:]].*)$/\2\1\3/' /tmp/yaml-diff/body
               echo '```'
               echo "</details>"
               echo "<!-- mandatory empty line -->"
