@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-02
+
+### Changed
+
+- `yaml-diff.yaml` now posts its `dyff` output inside a ` ```diff ` fenced block so GitHub colourises it — removed values render red, added values green, and each file gets a `@@ … @@` header. dyff's go-patch `-`/`+` markers are moved to column 0 (indentation preserved after the marker) so the highlighter picks them up; the rewrite only reorders leading whitespace, so the comment-size truncation limits are unaffected. dyff's own ANSI colour stays disabled (comments can't render it). Requested in giantswarm/roadmap#4121.
+
 ## 2026-06-30
 
 ### Fixed
