@@ -64,6 +64,8 @@ jobs:
     steps:
       - run: sudo snap install shfmt
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       - name: cache pre-commit environment
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -98,6 +100,8 @@ jobs:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-pre-commit-gitops-validate-${{ hashFiles('.pre-commit-config.yaml') }}
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: run validation
         uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0 # v2.0.0
         id: validate
@@ -172,10 +176,13 @@ jobs:
       - run: which kubeconform
       - run: ls -la /opt/hostedtoolcache
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: template all for the new branch
         run: ./tools/test-all-ff template > /tmp/new.yaml
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          persist-credentials: false
           ref: "main"
           path: "old"
       - name: template all for the old branch
@@ -227,6 +234,8 @@ jobs:
       GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: install apptestctl
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
@@ -236,7 +245,12 @@ jobs:
           tarball_binary_path: "apptestctl-v${version}-linux-amd64/${binary}"
           version: ${{ inputs.apptestctl_ver }}
       - name: install clusterctl
-        run: curl -sSL https://github.com/kubernetes-sigs/cluster-api/releases/download/v${{ inputs.clusterctl_ver }}/clusterctl-linux-amd64 -o /usr/local/bin/clusterctl && chmod +x /usr/local/bin/clusterctl && clusterctl version
+        env:
+          CLUSTERCTL_VER: ${{ inputs.clusterctl_ver }}
+        run: |
+          curl -sSL "https://github.com/kubernetes-sigs/cluster-api/releases/download/v${CLUSTERCTL_VER}/clusterctl-linux-amd64" -o /usr/local/bin/clusterctl
+          chmod +x /usr/local/bin/clusterctl
+          clusterctl version
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
