@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## 2026-07-02
 
+### Added
+
+- `gitops-validate.yaml` — new reusable workflow for validating GitOps repositories built from `giantswarm/gitops-template` (runs pre-commit, `./tools/test-all-ff validate`, a rendered-manifest `dyff` comment, and the `tests/ats` kind e2e). Consolidates CI that was previously hand-maintained in each consumer's `validate.yaml`/`basic.yml`; all actions are on current node24 releases and SHA-pinned. Consumers call it with `uses:` and pass the `GITOPS_MASTER_GPG_KEY` secret.
+
 ### Changed
 
 - `yaml-diff.yaml` now posts its `dyff` output inside a ` ```diff ` fenced block so GitHub colourises it — removed values render red, added values green, and each file gets a `@@ … @@` header. dyff's go-patch `-`/`+` markers are moved to column 0 (indentation preserved after the marker) so the highlighter picks them up; the rewrite only reorders leading whitespace, so the comment-size truncation limits are unaffected. dyff's own ANSI colour stays disabled (comments can't render it). Requested in giantswarm/roadmap#4121.
