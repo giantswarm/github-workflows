@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-06
+
+### Fixed
+
+- `sync-from-upstream.yaml` — the dependency-version detection step now falls back to a subchart's `version:` field when `appVersion:` is not set, instead of skipping the dependency. Subcharts vendored without an `appVersion` (e.g. `giantswarm/kyverno-crds`) were always reported as "No version change", so `CHANGELOG.md` was never updated by the automated upstream-sync PR. Extraction also tolerates a trailing `# VERSION` comment on the `version:` line.
+
+### Changed
+
+- `sync-from-upstream.yaml` — the automated PR title now names the updated dependencies instead of a static "automated update from upstream". A single change reads `chore(chart): update <dep> to <version> from upstream`; two or three list the names; more than three collapse to `chore(chart): update N dependencies from upstream`.
+
 ## 2026-07-02
 
 ### Added
