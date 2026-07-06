@@ -150,6 +150,16 @@ jobs:
             in_deps && /name:/ { print $NF }
           ' "${CHART_YAML}")
 
+          # Read a subchart's version, preferring appVersion and falling back to
+          # version when appVersion is not set. $2 skips any trailing "# VERSION" comment.
+          chart_version() {
+            awk '
+              /^appVersion:/ { appv = $2 }
+              /^version:/    { ver = $2 }
+              END { print (appv != "" ? appv : ver) }
+            '
+          }
+
           entries_file=$(mktemp)
           while IFS= read -r dep; do
             subchart="${{ steps.chart.outputs.chart_dir }}/charts/${dep}/Chart.yaml"
@@ -158,11 +168,10 @@ jobs:
               continue
             fi
 
-            new_version=$(grep -E "^appVersion:" "${subchart}" | awk '{print $NF}' || true)
-            old_version=$(git show origin/main:"${subchart}" 2>/dev/null \
-              | grep -E "^appVersion:" | awk '{print $NF}' || true)
+            new_version=$(chart_version < "${subchart}")
+            old_version=$(git show origin/main:"${subchart}" 2>/dev/null | chart_version || true)
 
-            # Strip surrounding quotes Helm allows around appVersion (e.g. "0.44.0").
+            # Strip surrounding quotes Helm allows around the version (e.g. "0.44.0").
             new_version="${new_version//[\"\']/}"
             old_version="${old_version//[\"\']/}"
 
