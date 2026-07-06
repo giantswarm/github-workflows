@@ -70,6 +70,7 @@ jobs:
     outputs:
       entries: ${{ steps.changelogger.outputs.entries }}
       drift: ${{ steps.values_drift.outputs.drift }}
+      title: ${{ steps.detect.outputs.title }}
     steps:
       - name: Generate token
         id: generate_token
@@ -161,6 +162,9 @@ jobs:
           }
 
           entries_file=$(mktemp)
+          changed_names=()
+          first_dep=""
+          first_ver=""
           while IFS= read -r dep; do
             subchart="${{ steps.chart.outputs.chart_dir }}/charts/${dep}/Chart.yaml"
             if [[ ! -f "${subchart}" ]]; then
@@ -182,9 +186,30 @@ jobs:
 
             [[ "${new_version}" != v* ]] && new_version="v${new_version}"
             echo "- Updated \`${dep}\` to upstream version \`${new_version}\`." >> "${entries_file}"
+            changed_names+=("${dep}")
+            if [[ ${#changed_names[@]} -eq 1 ]]; then
+              first_dep="${dep}"
+              first_ver="${new_version}"
+            fi
           done <<< "${deps}"
 
           echo "entries_file=${entries_file}" >> "$GITHUB_OUTPUT"
+
+          # Build a descriptive PR title from the changed dependencies. One dep gets
+          # its version; a few are listed by name; many collapse to a count.
+          count=${#changed_names[@]}
+          title=""
+          if (( count == 1 )); then
+            title="chore(chart): update ${first_dep} to ${first_ver} from upstream"
+          elif (( count >= 2 && count <= 3 )); then
+            joined=$(printf '%s, ' "${changed_names[@]}"); joined="${joined%, }"
+            title="chore(chart): update ${joined} from upstream"
+          elif (( count > 3 )); then
+            title="chore(chart): update ${count} dependencies from upstream"
+          fi
+          if [[ -n "${title}" ]]; then
+            echo "title=${title}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run changelogger
         id: changelogger
         run: |
@@ -238,6 +263,7 @@ jobs:
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           ENTRIES: ${{ needs.sync-and-update.outputs.entries }}
           DRIFT: ${{ needs.sync-and-update.outputs.drift }}
+          TITLE: ${{ needs.sync-and-update.outputs.title }}
         run: |
           body=""
           if [[ -n "${ENTRIES}" ]]; then
@@ -263,6 +289,11 @@ jobs:
               body+=$'\n```\n'
             fi
           fi
+          title_args=()
+          if [[ -n "${TITLE}" ]]; then
+            title_args=(--title "${TITLE}")
+          fi
           gh pr edit '${{ inputs.update_branch }}' \
             --repo ${{ github.repository }} \
+            "${title_args[@]}" \
             --body "${body}"
