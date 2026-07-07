@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-07
+
+### Fixed
+
+- `fix-vulnerabilities.yaml` — the nancy remediation job no longer fails to push when a previous run's PR is still open. The stable, regenerated `remediate-vulnerabilities-<base>` branch had divergent history, so the plain push was rejected. Dropped the silently-failing `git pull`, switched to `git push --force`, and made `gh pr create` idempotent.
+
 ## 2026-07-06
 
 ### Fixed
