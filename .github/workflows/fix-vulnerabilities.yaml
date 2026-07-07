@@ -86,8 +86,10 @@ jobs:
 
       - name: Create new branch
         id: create_branch
+        env:
+          base: ${{ needs.gather_facts.outputs.branch }}
         run: |
-          branch="remediate-vulnerabilities-${{ needs.gather_facts.outputs.branch }}"
+          branch="remediate-vulnerabilities-${base}"
           echo "branch=${branch}" >> $GITHUB_OUTPUT
           git checkout -b "${branch}"
 
@@ -122,16 +124,17 @@ jobs:
         if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         env:
           remote_repo: "https://${{ github.actor }}:${{ steps.generate_token.outputs.token }}@github.com/${{ github.repository }}.git"
+          branch: ${{ steps.create_branch.outputs.branch }}
         run: |
-          git push --force "${remote_repo}" HEAD:"${{ steps.create_branch.outputs.branch }}"
+          git push --force "${remote_repo}" HEAD:"${branch}"
 
       - name: Create pull request
         env:
           GITHUB_TOKEN: "${{ steps.generate_token.outputs.token }}"
+          branch: ${{ steps.create_branch.outputs.branch }}
+          base: ${{ needs.gather_facts.outputs.branch }}
         if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         run: |
-          branch="${{ steps.create_branch.outputs.branch }}"
-          base="${{ needs.gather_facts.outputs.branch }}"
           if [ -z "$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')" ]; then
             gh pr create \
               --title "fix(nancy): remediate findings on ${base}" \
