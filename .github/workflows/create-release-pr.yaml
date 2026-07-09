@@ -271,7 +271,13 @@ jobs:
               }
               found {
                 if ($0 ~ /^\[[^]]+\]:[ \t]*https?:\/\//) next
-                print
+                if (!started && $0 ~ /^[[:space:]]*$/) next
+                started = 1
+                buf[++n] = $0
+              }
+              END {
+                while (n > 0 && buf[n] ~ /^[[:space:]]*$/) n--
+                for (i = 1; i <= n; i++) print buf[i]
               }
             ' "${changelog}"
           }
@@ -293,6 +299,21 @@ jobs:
             extract_section "${rcv}" >> "${sources}"
           done <<< "${rc_sorted}"
 
+          # The RC sources already passed validate-changelog.yaml (which accepts only the
+          # six Keep a Changelog categories), but the "Unreleased" delta -- the first
+          # source -- is not gated by that workflow (it runs only on release branches), so
+          # a non-canonical H3 there would be silently dropped by the category merge below.
+          # Refuse to drop content: fail loudly and point at the offending heading.
+          if grep -E '^### ' "${sources}" \
+            | grep -qvE '^### (Added|Changed|Deprecated|Removed|Fixed|Security)[[:space:]]*$'; then
+            echo "::error::Aggregated changelog for ${version} has a non-Keep-a-Changelog H3 heading (see below); fix it and re-run." >&2
+            echo "Allowed categories: Added, Changed, Deprecated, Removed, Fixed, Security (the Unreleased delta is not gated by validate-changelog.yaml)." >&2
+            grep -E '^### ' "${sources}" \
+              | grep -vE '^### (Added|Changed|Deprecated|Removed|Fixed|Security)[[:space:]]*$' \
+              | sed 's/^/  offending heading: /' >&2
+            exit 1
+          fi
+
           first_rc="$(printf '%s\n' "${rc_sorted}" | head -1)"
           last_rc="$(printf '%s\n' "${rc_sorted}" | tail -1)"
           if [ "${first_rc}" = "${last_rc}" ]; then
@@ -304,8 +325,8 @@ jobs:
           # Merge bullets by Keep a Changelog category, preserving insertion order
           # (Unreleased first, then RCs oldest -> newest). Emit categories in the
           # canonical order and prepend the note as the first bullet under "Changed".
-          # Non-canonical H3s cannot occur here: each RC already passed the changelog
-          # validator, which only accepts the six categories below.
+          # Every H3 here is canonical (RCs passed the validator; the Unreleased delta was
+          # checked just above), so the category merge drops no content.
           merged="$(mktemp)"
           awk -v note="${note}" '
             /^### / {
@@ -330,6 +351,15 @@ jobs:
               }
             }
           ' "${sources}" > "${merged}"
+
+          # The splice below lands the merged body inside the "## [<version>]" header that
+          # architect created. If that header is absent, the merged content would be
+          # silently discarded, leaving the changelog unchanged while this step logs
+          # success -- fail instead so the problem is visible.
+          if ! grep -qE "^## \[${core_re}\]" "${changelog}"; then
+            echo "::error::Stable section \"## [${version}]\" not found in ${changelog}; cannot splice (did 'architect prepare-release' run?)." >&2
+            exit 1
+          fi
 
           # Splice the merged content back into the "## [<version>]" section, replacing
           # only its body; the RC sections, link references and the "Unreleased" heading
