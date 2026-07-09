@@ -220,6 +220,141 @@ jobs:
       - name: Prepare release changes
         run: |
           architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
+      - name: Aggregate release-candidate changelogs on promotion
+        env:
+          version: "${{ needs.gather_facts.outputs.version }}"
+          is_rc: "${{ needs.gather_facts.outputs.is_rc }}"
+        run: |
+          set -euo pipefail
+          changelog="CHANGELOG.md"
+          note_prefix="This release aggregates all changes from release candidate"
+
+          # Only stable releases can be a promotion of an RC series. architect has
+          # already moved the "Unreleased" delta into "## [<version>]"; for a stable
+          # promotion we additionally merge every "## [<version>-rc.N]" section into
+          # it, so the GitHub release page (built solely from the version's section)
+          # shows the complete set of changes rather than just the (often empty) delta.
+          if [ "${is_rc}" = "true" ]; then
+            echo "RC release (${version}); no aggregation needed."
+            exit 0
+          fi
+
+          if [ ! -f "${changelog}" ]; then
+            echo "No ${changelog}; nothing to aggregate."
+            exit 0
+          fi
+
+          core="${version}"
+          core_re="${core//./\\.}" # escape dots for use in a regex
+
+          # Release-candidate entries for this exact core, ordered oldest -> newest.
+          rc_sorted="$(grep -oE "^## \[${core_re}-rc\.[0-9]+\]" "${changelog}" \
+            | sed -E 's/^## \[(.*)\]$/\1/' \
+            | sort -V || true)"
+
+          if [ -z "${rc_sorted}" ]; then
+            echo "No release-candidate entries found for ${core}; not a promotion."
+            exit 0
+          fi
+
+          echo "Promotion detected for ${core}. Aggregating release candidates:"
+          echo "${rc_sorted}" | sed 's/^/  - /'
+
+          # Body of a "## [<ver>]" section: lines until the next "## [" header,
+          # skipping link-reference definitions. Mirrors the extractor in
+          # create-release.yaml so we produce exactly what the release body reads.
+          extract_section() {
+            awk -v ver="$1" '
+              /^## \[/ {
+                if (found) exit
+                if (index($0, "[" ver "]")) { found = 1; next }
+              }
+              found {
+                if ($0 ~ /^\[[^]]+\]:[ \t]*https?:\/\//) next
+                print
+              }
+            ' "${changelog}"
+          }
+
+          # Idempotency guard (defence-in-depth on top of the check_skip job): if the
+          # stable section already carries the note, this has already run.
+          if extract_section "${version}" | grep -qF "${note_prefix}"; then
+            echo "Stable section already aggregated; skipping."
+            exit 0
+          fi
+
+          # Source stream: the "Unreleased" delta (current stable section body) first,
+          # then each RC oldest -> newest. Each section begins with its own H3 headers,
+          # so simple concatenation is safe for the category bucketing below.
+          sources="$(mktemp)"
+          extract_section "${version}" >> "${sources}"
+          while IFS= read -r rcv; do
+            [ -n "${rcv}" ] || continue
+            extract_section "${rcv}" >> "${sources}"
+          done <<< "${rc_sorted}"
+
+          first_rc="$(printf '%s\n' "${rc_sorted}" | head -1)"
+          last_rc="$(printf '%s\n' "${rc_sorted}" | tail -1)"
+          if [ "${first_rc}" = "${last_rc}" ]; then
+            note="${note_prefix} ${first_rc}."
+          else
+            note="${note_prefix}s ${first_rc} through ${last_rc}."
+          fi
+
+          # Merge bullets by Keep a Changelog category, preserving insertion order
+          # (Unreleased first, then RCs oldest -> newest). Emit categories in the
+          # canonical order and prepend the note as the first bullet under "Changed".
+          # Non-canonical H3s cannot occur here: each RC already passed the changelog
+          # validator, which only accepts the six categories below.
+          merged="$(mktemp)"
+          awk -v note="${note}" '
+            /^### / {
+              cat = $0
+              sub(/^### /, "", cat)
+              sub(/[[:space:]]+$/, "", cat)
+              current = cat
+              next
+            }
+            {
+              if (current == "") next
+              if ($0 ~ /^[[:space:]]*$/) next
+              content[current] = content[current] $0 "\n"
+            }
+            END {
+              n = split("Added Changed Deprecated Removed Fixed Security", canon, " ")
+              for (i = 1; i <= n; i++) {
+                c = canon[i]
+                body = content[c]
+                if (c == "Changed") body = "- " note "\n" body
+                if (body != "") printf "### %s\n\n%s\n", c, body
+              }
+            }
+          ' "${sources}" > "${merged}"
+
+          # Splice the merged content back into the "## [<version>]" section, replacing
+          # only its body; the RC sections, link references and the "Unreleased" heading
+          # are left untouched.
+          updated="$(mktemp)"
+          awk -v ver="${version}" -v mfile="${merged}" '
+            BEGIN { while ((getline line < mfile) > 0) merged = merged line "\n" }
+            /^## \[/ {
+              if (inSection) inSection = 0
+              if (index($0, "[" ver "]")) {
+                print
+                printf "\n%s", merged
+                inSection = 1
+                next
+              }
+            }
+            inSection { next }
+            { print }
+          ' "${changelog}" > "${updated}"
+
+          mv "${updated}" "${changelog}"
+          rm -f "${sources}" "${merged}"
+
+          echo "Aggregated changelog for ${version}:"
+          extract_section "${version}"
       - name: Update version field in Chart.yaml
         run: |
           # Define chart_dir
