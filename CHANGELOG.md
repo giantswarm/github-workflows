@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-14
+
+### Changed
+
+- `create-release-pr.yaml` — bumped `architect` to `v8.3.0`, which aggregates release-candidate changelogs when promoting to a stable release. On an RC → stable promotion, `architect prepare-release` now merges every `## [X.Y.Z-rc.N]` section into the promoted stable section, so the GitHub release page (built from that version's section) shows the full change set instead of the often-empty delta. No workflow logic is needed — the behavior lives in the binary that already writes `CHANGELOG.md`.
+
 ## 2026-07-07
 
 ### Fixed
