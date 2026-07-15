@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-15
+
+### Fixed
+
+- `create-release.yaml` / `create-release-pr.yaml` — the `install-binary-action` step that installs `gitsemver` no longer builds a double-`v` download URL (e.g. `.../download/vv2.0.1/gitsemver-vv2.0.1-...`), which 404'd and broke the Create Release workflow for consumers. The `download_url` template hardcoded a `v` (`v${version}`), but Renovate fills the `version:` field with the `v`-prefixed release tag (`v2.0.1`), so the prefix was applied twice. The template now consumes the `v` from `${version}` (matching the neighbouring `architect` install block), so the value stays `v`-prefixed and survives future Renovate bumps. Reported in giantswarm/giantswarm#37171.
+
 ## 2026-07-14
 
 ### Changed
