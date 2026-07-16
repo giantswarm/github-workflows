@@ -77,8 +77,8 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: 2.0.1
-          download_url: "https://github.com/giantswarm/${binary}/releases/download/v${version}/${binary}-v${version}-linux-amd64.tar.gz"
+          version: v2.0.1
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-${version}-linux-amd64.tar.gz"
           tarball_binary_path: "*/${binary}"
           smoke_test: "${binary} --version"
 

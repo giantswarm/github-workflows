@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-15
+
+### Fixed
+
+- `create-release.yaml` / `create-release-pr.yaml` — fix a bug in the `install-binary-action` step that resulted in a double-`v` prefix in the `gitsemver` version.
+
 ## 2026-07-14
 
 ### Changed
