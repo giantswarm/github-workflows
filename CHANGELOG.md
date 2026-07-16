@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Fixed
 
-- `create-release.yaml` / `create-release-pr.yaml` — the `install-binary-action` step that installs `gitsemver` no longer builds a double-`v` download URL (e.g. `.../download/vv2.0.1/gitsemver-vv2.0.1-...`), which 404'd and broke the Create Release workflow for consumers. The `download_url` template hardcoded a `v` (`v${version}`), but Renovate fills the `version:` field with the `v`-prefixed release tag (`v2.0.1`), so the prefix was applied twice. The template now consumes the `v` from `${version}` (matching the neighbouring `architect` install block), so the value stays `v`-prefixed and survives future Renovate bumps. Reported in giantswarm/giantswarm#37171.
+- `create-release.yaml` / `create-release-pr.yaml` — fix a bug in the `install-binary-action` step that resulted in a double-`v` prefix in the `gitsemver` version.
 
 ## 2026-07-14
 
