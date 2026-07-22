@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-22
+
+### Fixed
+
+- `semantic-pull-request.yaml` - fix the case where the required check doesn't run on `merge_groups`.
+
 ## 2026-07-15
 
 ### Fixed
