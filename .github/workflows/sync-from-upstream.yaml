@@ -36,6 +36,9 @@ jobs:
         with:
           fetch-depth: 0
       - name: Prepare update branch
+        env:
+          UPDATE_BRANCH: ${{ inputs.update_branch }}
+          UPSTREAM_BRANCH: ${{ github.ref_name }}
         run: |
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
@@ -44,16 +47,16 @@ jobs:
           # Base the update branch on the whole upstream (renovate) branch, not just
           # vendir.yml. Reuse the existing update branch if present so we don't discard
           # changes already pushed to it; otherwise create it from the renovate branch.
-          if git ls-remote --exit-code --heads origin "${{ inputs.update_branch }}" > /dev/null 2>&1; then
-            git checkout --track "origin/${{ inputs.update_branch }}"
+          if git ls-remote --exit-code --heads origin "${UPDATE_BRANCH}" > /dev/null 2>&1; then
+            git checkout --track "origin/${UPDATE_BRANCH}"
             # Merge the whole renovate branch in. On conflict prefer the upstream side
             # (only vendir.yml realistically conflicts; our derived files do not).
-            git merge --no-edit -X theirs "origin/${{ github.ref_name }}"
+            git merge --no-edit -X theirs "origin/${UPSTREAM_BRANCH}"
           else
-            git checkout -b "${{ inputs.update_branch }}" "origin/${{ github.ref_name }}"
+            git checkout -b "${UPDATE_BRANCH}" "origin/${UPSTREAM_BRANCH}"
           fi
 
-          git push origin "${{ inputs.update_branch }}"
+          git push origin "${UPDATE_BRANCH}"
 
   call-update-chart:
     needs: prepare-update-branch
