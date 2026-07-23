@@ -136,7 +136,7 @@ jobs:
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}"
       - name: Run schema-gen
-        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.5
+        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.6
         with:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
