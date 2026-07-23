@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-07-23
+
+### Changed
+
+- `sync-from-upstream.yaml` — bumped the `shield-values-sync`, `shield-schema-gen`, and `shield-changelogger` tool images to `0.0.6`.
+- `sync-from-upstream.yaml` — the update branch is now based on the *entire* upstream (Renovate) branch instead of cherry-picking only `vendir.yml`. `prepare-update-branch` merges the whole renovate branch into `update_branch` (preferring the upstream side on conflict), so non-`vendir.yml` changes made on that branch are carried into the sync PR while changes already on `update_branch` are preserved.
+
 ## 2026-07-22
 
 ### Fixed
