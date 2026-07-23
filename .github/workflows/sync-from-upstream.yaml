@@ -41,17 +41,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git fetch origin
 
-          # Use the existing remote branch if present; otherwise create from main
+          # Base the update branch on the whole upstream (renovate) branch, not just
+          # vendir.yml. Reuse the existing update branch if present so we don't discard
+          # changes already pushed to it; otherwise create it from the renovate branch.
           if git ls-remote --exit-code --heads origin "${{ inputs.update_branch }}" > /dev/null 2>&1; then
             git checkout --track "origin/${{ inputs.update_branch }}"
+            # Merge the whole renovate branch in. On conflict prefer the upstream side
+            # (only vendir.yml realistically conflicts; our derived files do not).
+            git merge --no-edit -X theirs "origin/${{ github.ref_name }}"
           else
-            git checkout main
-            git checkout -b "${{ inputs.update_branch }}"
+            git checkout -b "${{ inputs.update_branch }}" "origin/${{ github.ref_name }}"
           fi
 
-          git checkout "origin/${{ github.ref_name }}" -- vendir.yml
-          git add vendir.yml
-          git diff --cached --quiet || git commit -m "chore: update vendir.yml from upstream"
           git push origin "${{ inputs.update_branch }}"
 
   call-update-chart:
@@ -110,7 +111,7 @@ jobs:
             -e GIT_CONFIG_COUNT=1 \
             -e GIT_CONFIG_KEY_0=safe.directory \
             -e GIT_CONFIG_VALUE_0=/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.6 \
             --show-git-diff \
             --diff-base origin/main \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
@@ -132,11 +133,11 @@ jobs:
           fi
           docker run --rm \
             -v ${{ github.workspace }}:/github/workspace \
-            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.5 \
+            gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.6 \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}"
       - name: Run schema-gen
-        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.5
+        uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.6
         with:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
@@ -226,7 +227,7 @@ jobs:
           if [[ ${#args[@]} -gt 0 ]]; then
             docker run --rm \
               -v ${{ github.workspace }}:/workspace \
-              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.5 \
+              gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.6 \
               --changelog-path /workspace/CHANGELOG.md \
               "${args[@]}"
           fi
