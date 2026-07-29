@@ -123,6 +123,15 @@ jobs:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
+      - name: Ensure automated-update label exists
+        env:
+          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+        run: |
+          gh label create automated-update \
+            --repo "${{ github.repository }}" \
+            --color e86d00 \
+            --description "Used to identify automated updates from upstream-forks" \
+            --force
       - name: Update PR
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
