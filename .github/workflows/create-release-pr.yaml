@@ -78,8 +78,11 @@ jobs:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
           version: v2.0.1
-          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-${version}-linux-amd64.tar.gz"
-          tarball_binary_path: "*/${binary}"
+          # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
+          # for repos passing `build-release-artifacts: true` to create-release.yaml, and gitsemver
+          # stopped doing that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving,
+          # so no `tarball_binary_path` is needed.
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-linux-amd64"
           smoke_test: "${binary} --version"
 
       - name: Resolve version
