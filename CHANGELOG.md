@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-08-05
+
+### Fixed
+
+- `create-release.yaml`, `create-release-pr.yaml` — install `gitsemver` from its raw
+  `gitsemver-linux-amd64` release asset instead of the legacy
+  `gitsemver-v<version>-linux-amd64.tar.gz`. Those tarballs are only built by this repo's own
+  `create_and_upload_build_artifacts` job, which requires the caller to pass
+  `build-release-artifacts: true` — and `giantswarm/gitsemver#260` removed that input. The pinned
+  v2.0.1 predates the removal so it still ships both asset names, but the next gitsemver release
+  would have 404'd every release workflow in the org. This is the same failure that broke
+  `schemalint`'s action at v2.6.2.
+
 ## 2026-07-29
 
 ### Fixed
