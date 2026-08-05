@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-08-05
+
+### Added
+
+- `selftest-json-schema-validation.yaml` — new check that runs `json-schema-validation.yaml` itself against a fixture chart in `helm/selftest-cluster-app/` on pull requests that touch it. Renovate bumping `verify-helm-schema` to v2.6.2 broke every cluster app repo because schemalint's release assets changed from tarballs to raw binaries while its action still requested the tarball URL; nothing here could catch that, since this repo is consumed at `@main` and its only checks are static.
+
+### Changed
+
+- `json-schema-validation.yaml` — both `actions/checkout` steps now set `persist-credentials: false`, per the repository's action rules. Neither job uses git.
+
 ## 2026-07-29
 
 ### Fixed

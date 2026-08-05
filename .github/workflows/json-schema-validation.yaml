@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run schemalint
         id: run-schemalint
         uses: giantswarm/schemalint/actions/verify-helm-schema@43a8314fa06020e2651cffc1617f5262b3d921a4 # v2.6.3
@@ -32,6 +34,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run helm-values-gen
         id: run-helm-values-gen
