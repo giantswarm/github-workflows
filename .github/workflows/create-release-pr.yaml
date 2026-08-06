@@ -297,7 +297,9 @@ jobs:
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          actor: "${{ github.actor }}"
           base: "${{ needs.gather_facts.outputs.base }}"
+          branch: "${{ needs.gather_facts.outputs.branch }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           # A repo can ship a release PR body in .github/release-pr-body.md. It is used
@@ -313,4 +315,11 @@ jobs:
             body=""
           fi
 
-          gh pr create --assignee ${{ github.actor }} --title "chore(release): v${{ env.version }}" --body "${body}" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"
+          # Values come from the step environment rather than template expansions, which
+          # would be interpolated into the script before it runs.
+          gh pr create \
+            --assignee "${actor}" \
+            --title "chore(release): v${version}" \
+            --body "${body}" \
+            --base "${base}" \
+            --head "${branch}"
