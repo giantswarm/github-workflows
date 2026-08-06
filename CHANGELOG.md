@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-08-06
+
+### Added
+
+- `create-release-pr`: Use `.github/release-pr-body.md` as the release PR body when a repo ships that file. Release PRs were created with an empty body, so repos whose CI is triggered from the PR body - such as Tekton's `/run cluster-test-suites` - never ran their tests on a release PR unless someone remembered to comment. Repos without the file keep an empty body. Towards https://github.com/giantswarm/roadmap/issues/4334
+
 ## 2026-08-05
 
 ### Fixed

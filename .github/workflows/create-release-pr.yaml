@@ -300,4 +300,17 @@ jobs:
           base: "${{ needs.gather_facts.outputs.base }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          gh pr create --assignee ${{ github.actor }} --title "chore(release): v${{ env.version }}" --body "" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"
+          # A repo can ship a release PR body in .github/release-pr-body.md. It is used
+          # verbatim, so a repo whose CI is triggered from the PR body - e.g. Tekton's
+          # `/run cluster-test-suites` - gets its tests run on the release PR without
+          # anyone having to remember to comment. Repos without the file keep an empty
+          # body, as before.
+          body_file=".github/release-pr-body.md"
+          if [ -f "${body_file}" ]; then
+            echo "Using release PR body from ${body_file}"
+            body="$(cat "${body_file}")"
+          else
+            body=""
+          fi
+
+          gh pr create --assignee ${{ github.actor }} --title "chore(release): v${{ env.version }}" --body "${body}" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"
