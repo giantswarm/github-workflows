@@ -15,6 +15,24 @@ Instead this file uses a date-based structure.
 ### Changed
 
 - `json-schema-validation.yaml` — both `actions/checkout` steps now set `persist-credentials: false`, per the repository's action rules. Neither job uses git.
+## 2026-08-06
+
+### Added
+
+- `create-release-pr`: Use `.github/release-pr-body.md` as the release PR body when a repo ships that file. Release PRs were created with an empty body, so repos whose CI is triggered from the PR body - such as Tekton's `/run cluster-test-suites` - never ran their tests on a release PR unless someone remembered to comment. Repos without the file keep an empty body. Towards https://github.com/giantswarm/roadmap/issues/4334
+
+## 2026-08-05
+
+### Fixed
+
+- `create-release.yaml`, `create-release-pr.yaml` — install `gitsemver` from its raw
+  `gitsemver-linux-amd64` release asset instead of the legacy
+  `gitsemver-v<version>-linux-amd64.tar.gz`. Those tarballs are only built by this repo's own
+  `create_and_upload_build_artifacts` job, which requires the caller to pass
+  `build-release-artifacts: true` — and `giantswarm/gitsemver#260` removed that input. The pinned
+  v2.0.1 predates the removal so it still ships both asset names, but the next gitsemver release
+  would have 404'd every release workflow in the org. This is the same failure that broke
+  `schemalint`'s action at v2.6.2.
 
 ## 2026-07-29
 
@@ -83,7 +101,7 @@ Instead this file uses a date-based structure.
 
 ### Security
 
-- Fixed a GitHub Actions script injection (CWE-94) in the `debug_info` "Print github context JSON" step of `create-release.yaml`, `create-release-pr.yaml`, `update-chart.yaml` and `ensure-major-version-tags.yaml`. The step interpolated `${{ toJson(github) }}` directly into a `run:` shell heredoc, so attacker-controllable event fields (e.g. a commit message containing an `EOF` line plus shell commands) could break out of the heredoc and execute arbitrary commands on the runner. The context is now passed through an `env:` variable (`GITHUB_CONTEXT`) and printed with `echo "$GITHUB_CONTEXT"`, treating it as data rather than script text — the same safe pattern already used for `COMMIT_MESSAGE` in `create-release.yaml`. Reported via giantswarm/giantswarm#36940.
+- Fixed a GitHub Actions script injection (CWE-94) in the `debug_info` "Print github context JSON" step of `create-release.yaml`, `create-release-pr.yaml`, `update-chart.yaml` and `ensure-major-version-tags.yaml`. Reported via giantswarm/giantswarm#36940. Special thanks to @sumitshah00 for reporting this vulnerability.
 
 ### Added
 

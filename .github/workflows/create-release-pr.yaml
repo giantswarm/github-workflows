@@ -78,8 +78,11 @@ jobs:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
           version: v2.0.1
-          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-${version}-linux-amd64.tar.gz"
-          tarball_binary_path: "*/${binary}"
+          # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
+          # for repos passing `build-release-artifacts: true` to create-release.yaml, and gitsemver
+          # stopped doing that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving,
+          # so no `tarball_binary_path` is needed.
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-linux-amd64"
           smoke_test: "${binary} --version"
 
       - name: Resolve version
@@ -294,7 +297,29 @@ jobs:
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          actor: "${{ github.actor }}"
           base: "${{ needs.gather_facts.outputs.base }}"
+          branch: "${{ needs.gather_facts.outputs.branch }}"
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
-          gh pr create --assignee ${{ github.actor }} --title "chore(release): v${{ env.version }}" --body "" --base ${{ env.base }} --head "${{ needs.gather_facts.outputs.branch }}"
+          # A repo can ship a release PR body in .github/release-pr-body.md. It is used
+          # verbatim, so a repo whose CI is triggered from the PR body - e.g. Tekton's
+          # `/run cluster-test-suites` - gets its tests run on the release PR without
+          # anyone having to remember to comment. Repos without the file keep an empty
+          # body, as before.
+          body_file=".github/release-pr-body.md"
+          if [ -f "${body_file}" ]; then
+            echo "Using release PR body from ${body_file}"
+            body="$(cat "${body_file}")"
+          else
+            body=""
+          fi
+
+          # Values come from the step environment rather than template expansions, which
+          # would be interpolated into the script before it runs.
+          gh pr create \
+            --assignee "${actor}" \
+            --title "chore(release): v${version}" \
+            --body "${body}" \
+            --base "${base}" \
+            --head "${branch}"
