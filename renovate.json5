@@ -3,6 +3,10 @@
   extends: [
     'github>giantswarm/renovate-presets:default.json5',
   ],
+  // `helm/` holds a self-test fixture chart, not a real one. See helm/selftest-cluster-app/README.md.
+  ignorePaths: [
+    'helm/**',
+  ],
   customManagers: [
     {
       description: 'Allow updating binaries in workflows installed via install-binary-action',

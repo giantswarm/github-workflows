@@ -1,0 +1,29 @@
+# Self-test for `json-schema-validation.yaml`.
+#
+# That workflow is consumed org-wide at `@main`, so a bad action pin merged here is live in
+# every cluster app repo within a minute. The repo's other checks are static (yamllint,
+# action-validator, zizmor) and cannot see a broken action: schemalint v2.6.2 changed its
+# release assets from tarballs to raw binaries, its action kept using install-binary-action's
+# default tarball URL, and the resulting 404 only surfaced in consumer repos.
+#
+# This calls the real reusable workflow against the fixture chart in `helm/`, so the action
+# pins under test are exactly the ones that ship - there is no second copy to drift.
+
+name: Self-test JSON schema validation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/json-schema-validation.yaml'
+      - '.github/workflows/selftest-json-schema-validation.yaml'
+      - 'helm/**'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  selftest:
+    name: Run json-schema-validation against the fixture chart
+    uses: ./.github/workflows/json-schema-validation.yaml
+    permissions:
+      contents: read
