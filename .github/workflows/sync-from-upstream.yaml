@@ -145,10 +145,12 @@ jobs:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
         id: detect
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           set -euxo pipefail
 
-          CHART_YAML="${{ steps.chart.outputs.chart_dir }}/Chart.yaml"
+          CHART_YAML="${CHART_DIR}/Chart.yaml"
           deps=$(awk '
             /^dependencies:/ { in_deps=1; next }
             in_deps && /^[^[:space:]]/ { in_deps=0 }
@@ -170,7 +172,7 @@ jobs:
           first_dep=""
           first_ver=""
           while IFS= read -r dep; do
-            subchart="${{ steps.chart.outputs.chart_dir }}/charts/${dep}/Chart.yaml"
+            subchart="${CHART_DIR}/charts/${dep}/Chart.yaml"
             if [[ ! -f "${subchart}" ]]; then
               echo "warning: ${subchart} not found, skipping ${dep}" >&2
               continue
@@ -196,6 +198,42 @@ jobs:
               first_ver="${new_version}"
             fi
           done <<< "${deps}"
+
+          # Detect non-chart vendir entries (e.g. plain git directories not under charts/).
+          # Each directory can have multiple independent content entries, check them all.
+          exclude_path="${CHART_DIR}/charts/*"
+          if [[ -f "vendir.yml" ]] && git show origin/main:vendir.yml > /tmp/vendir.main.yml 2>/dev/null; then
+            while IFS= read -r dir_path; do
+              dir_query=".directories[] | select(.path == \"${dir_path}\")"
+              while IFS=$'\t' read -r content_path; do
+              # Queries to select the name and version of the content entry
+              content_query="${dir_query} | .contents[] | select(.path == \"${content_path}\")"
+              version_query="${content_query} | .git.ref // .githubRelease.tag // .helmChart.version"
+              dep_query="${content_query} | .git.url // .githubRelease.slug // .helmChart.name | split(\"/\")[-1] | sub(\"\.git$\"; \"\")"
+
+              dep=$(yq "${dep_query}" vendir.yml)
+              old_version=$(yq "${version_query}" /tmp/vendir.main.yml)
+              new_version=$(yq "${version_query}" vendir.yml)
+
+              if [[ -z "${dep}" || -z "${old_version}" || -z "${new_version}" ]]; then
+                echo "warning: unable to determine name or version for ${dep:-${dir_path}/${content_path}}, skipping"
+                continue
+              fi
+
+              if [[ "${new_version}" == "${old_version}" ]]; then
+                echo "No version change for ${dep} (${new_version}), skipping"
+                continue
+              fi
+
+              echo "- Updated \`${dep}\` to upstream version \`${new_version}\`." >> "${entries_file}"
+              changed_names+=("${dep}")
+              if [[ ${#changed_names[@]} -eq 1 ]]; then
+                first_dep="${dep}"
+                first_ver="${new_version}"
+              fi
+              done < <(yq "${dir_query} | .contents[] | .path" vendir.yml)
+            done < <(yq ".directories[] | select(.path != \"${exclude_path}\") | .path" vendir.yml)
+          fi
 
           echo "entries_file=${entries_file}" >> "$GITHUB_OUTPUT"
 
