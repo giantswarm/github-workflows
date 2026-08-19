@@ -145,10 +145,12 @@ jobs:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
       - name: Detect dependency version changes
         id: detect
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           set -euxo pipefail
 
-          CHART_YAML="${{ steps.chart.outputs.chart_dir }}/Chart.yaml"
+          CHART_YAML="${CHART_DIR}/Chart.yaml"
           deps=$(awk '
             /^dependencies:/ { in_deps=1; next }
             in_deps && /^[^[:space:]]/ { in_deps=0 }
@@ -170,7 +172,7 @@ jobs:
           first_dep=""
           first_ver=""
           while IFS= read -r dep; do
-            subchart="${{ steps.chart.outputs.chart_dir }}/charts/${dep}/Chart.yaml"
+            subchart="${CHART_DIR}/charts/${dep}/Chart.yaml"
             if [[ ! -f "${subchart}" ]]; then
               echo "warning: ${subchart} not found, skipping ${dep}" >&2
               continue
@@ -199,7 +201,7 @@ jobs:
 
           # Detect non-chart vendir entries (e.g. plain git directories not under charts/).
           # Each directory can have multiple independent content entries, check them all.
-          exclude_path="${{ steps.chart.outputs.chart_dir }}/charts/*"
+          exclude_path="${CHART_DIR}/charts/*"
           if [[ -f "vendir.yml" ]] && git show origin/main:vendir.yml > /tmp/vendir.main.yml 2>/dev/null; then
             while IFS= read -r dir_path; do
               dir_query=".directories[] | select(.path == \"${dir_path}\")"
