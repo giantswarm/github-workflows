@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## Unreleased
+
+### Added
+
+- `sync-from-upstream.yaml` — detect version changes in non-helm-subchart vendir entries. Previously only helm subchart dependencies listed in `Chart.yaml` were reflected in the PR and changelog, any additional vendir directories were silently ignored. The new pass iterates every directory in `vendir.yml` that is not under `<chart_dir>/charts/`, and uses `git.ref` / `githubRelease.tag` / `helmChart.version` to detect version changes. The changelog now lists all updated dependencies, and the PR title is updated to include the names of the changed dependencies.
+
 ## 2026-08-19
 
 ### Fixed
@@ -21,6 +27,7 @@ Instead this file uses a date-based structure.
 ### Changed
 
 - `json-schema-validation.yaml` — both `actions/checkout` steps now set `persist-credentials: false`, per the repository's action rules. Neither job uses git.
+
 ## 2026-08-06
 
 ### Added
@@ -51,7 +58,7 @@ Instead this file uses a date-based structure.
 ### Changed
 
 - `sync-from-upstream.yaml` — bumped the `shield-values-sync`, `shield-schema-gen`, and `shield-changelogger` tool images to `0.0.6`.
-- `sync-from-upstream.yaml` — the update branch is now based on the *entire* upstream (Renovate) branch instead of cherry-picking only `vendir.yml`. `prepare-update-branch` merges the whole renovate branch into `update_branch` (preferring the upstream side on conflict), so non-`vendir.yml` changes made on that branch are carried into the sync PR while changes already on `update_branch` are preserved.
+- `sync-from-upstream.yaml` — the update branch is now based on the _entire_ upstream (Renovate) branch instead of cherry-picking only `vendir.yml`. `prepare-update-branch` merges the whole renovate branch into `update_branch` (preferring the upstream side on conflict), so non-`vendir.yml` changes made on that branch are carried into the sync PR while changes already on `update_branch` are preserved.
 
 ## 2026-07-22
 
@@ -157,6 +164,7 @@ Instead this file uses a date-based structure.
 
 - `create-release.yaml` no longer recognises the legacy "reference version" form `vX.Y.Z-N` (e.g. `v1.2.3-4`) — the dedicated `ref_version` job and its special-case regex are gone. Any repo still pushing such tags via this workflow will need to migrate to the RC form (`vX.Y.Z-rc.N`).
 - `create-release.yaml` and `create-release-pr.yaml` no longer install `fsaintjacques/semver-tool`; all next-version arithmetic now goes through `gitsemver` (or bash parameter expansion on a version string already validated by it).
+
 ## 2026-06-18
 
 ### Fixed
