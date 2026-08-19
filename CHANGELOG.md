@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 however this project does not use Semantic Versioning and there are no releases.
 Instead this file uses a date-based structure.
 
+## 2026-08-19
+
+### Fixed
+
+- `gitops-validate.yaml` — pass `GITHUB_TOKEN` to the `run tests` step. The ATS tests run `clusterctl init`, which resolves CAPI provider versions through the GitHub releases API. Unauthenticated that is 60 requests per hour shared across every GitHub-hosted runner on the same egress IP, and `clusterctl` surfaces exhaustion as the misleading `failed to find releases tagged with a valid semantic version number`, which then fails as `Exception: Cannot bootstrap CAPI`. This made `test_on_kind` flaky in the one consumer of this workflow, `gitops-template`: 3 of the last 20 runs on ordinary branches failed, and 2 of 5 on `teams-alignment-branch`, blocking its open align PR. The job already declares `permissions: contents: read`, so the token needs no new scope.
+
 ## 2026-08-05
 
 ### Added
