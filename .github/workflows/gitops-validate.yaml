@@ -272,3 +272,9 @@ jobs:
           GITOPS_REPO_BRANCH: "${{ github.head_ref || github.ref_name }}"
           GITOPS_REPO_URL: "${{ github.server_url }}/${{ github.repository }}"
           GITOPS_MASTER_GPG_KEY: "${{ secrets.GITOPS_MASTER_GPG_KEY }}"
+          # The tests run `clusterctl init`, which resolves provider versions
+          # through the GitHub releases API. Unauthenticated that is 60 requests
+          # per hour shared across every GitHub-hosted runner on the same egress
+          # IP, and clusterctl reports exhaustion as the misleading "failed to
+          # find releases tagged with a valid semantic version number".
+          GITHUB_TOKEN: "${{ github.token }}"
