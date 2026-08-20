@@ -75,7 +75,7 @@ jobs:
           ref: ${{ needs.get_version.outputs.branch }}
           persist-credentials: false
       - name: Update version in action.yml
-        uses: mikefarah/yq@ce7026e3195aceac6b6a56a6b81fca4e8e466e36 # v4.53.4
+        uses: mikefarah/yq@c14f446382944492701b16c1ddb48bb9dbe683e3 # v4.53.6
         with:
           cmd: yq -i '${{ inputs.yq_expression }} = "${{ needs.get_version.outputs.version }}"' ${{ inputs.action_yml_path }}
       - name: Set up git identity
