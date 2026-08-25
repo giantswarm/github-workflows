@@ -87,8 +87,14 @@ jobs:
         with:
           ref: ${{ inputs.update_branch }}
           token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
       - name: Fetch main branch for version comparison
-        run: git fetch origin main
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git fetch "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" \
+            "+refs/heads/main:refs/remotes/origin/main"
       - name: Detect chart directory
         id: chart
         run: |
@@ -281,22 +287,32 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_OUTPUT"
           fi
+      - name: Set up Python for pre-commit
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
       - name: Run pre-commit
-        run: |
-          if [[ -f ".pre-commit-config.yaml" ]]; then
-            pre-commit run --all-files
-          fi
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        continue-on-error: true
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
       - name: Commit and push
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          UPDATE_BRANCH: ${{ inputs.update_branch }}
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git config --local user.name "HeraldBot[bot]"
-          ## Add the tool updated files first
-          git add ${{ steps.chart.outputs.chart_dir }}/values.yaml ${{ steps.chart.outputs.chart_dir }}/values.schema.json CHANGELOG.md
+          # Add the tool updated files first
+          git add "${CHART_DIR}/values.yaml" "${CHART_DIR}/values.schema.json" CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: sync values, schema and changelog from upstream"
-          ## Add pre-commit changes if any
-          git add helm/
-          git diff --cached --quiet || git commit -m "chore: apply pre-commit fixes"
-          git push origin ${{ inputs.update_branch }}
+          # Add pre-commit changes to tracked files if any
+          if [[ -f ".pre-commit-config.yaml" ]]; then
+            git add -u
+            git diff --cached --quiet || git commit -m "chore: apply pre-commit fixes"
+          fi
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" \
+            "HEAD:refs/heads/${UPDATE_BRANCH}"
 
   update-pr-description:
     runs-on: ubuntu-24.04
