@@ -281,12 +281,21 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_OUTPUT"
           fi
+      - name: Run pre-commit
+        run: |
+          if [[ -f ".pre-commit-config.yaml" ]]; then
+            pre-commit run --all-files
+          fi
       - name: Commit and push
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git config --local user.name "HeraldBot[bot]"
+          ## Add the tool updated files first
           git add ${{ steps.chart.outputs.chart_dir }}/values.yaml ${{ steps.chart.outputs.chart_dir }}/values.schema.json CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: sync values, schema and changelog from upstream"
+          ## Add pre-commit changes if any
+          git add helm/
+          git diff --cached --quiet || git commit -m "chore: apply pre-commit fixes"
           git push origin ${{ inputs.update_branch }}
 
   update-pr-description:
