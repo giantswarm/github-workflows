@@ -12,6 +12,21 @@ on:
         default: 'main#update-chart'
         required: false
         type: string
+      helm_docs_version:
+        description: >-
+          helm-docs version installed for the pre-commit run. Must match
+          HELM_DOCS_VERSION in the consumer's zz_generated.pre-commit.yaml.
+        default: '1.14.2'
+        required: false
+        type: string
+      helm_values_schema_json_version:
+        description: >-
+          helm-values-schema-json plugin version installed for the pre-commit
+          run. Must match HELM_VALUES_SCHEMA_JSON_VERSION in the consumer's
+          zz_generated.pre-commit.yaml.
+        default: '2.5.0'
+        required: false
+        type: string
     secrets:
       HERALD_CLIENT_ID:
         description: Client ID for create-github-app-token
@@ -87,8 +102,14 @@ jobs:
         with:
           ref: ${{ inputs.update_branch }}
           token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: false
       - name: Fetch main branch for version comparison
-        run: git fetch origin main
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git fetch "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" \
+            "+refs/heads/main:refs/remotes/origin/main"
       - name: Detect chart directory
         id: chart
         run: |
@@ -281,13 +302,63 @@ jobs:
               echo "${delimiter}"
             } >> "$GITHUB_OUTPUT"
           fi
+      - name: Set up Python for pre-commit
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      # The helm-docs and helm-schema hooks shell out to external tools. Without
+      # them installed here they exit 1 without fixing anything, so the chart
+      # README and values.schema.json stay stale and the consumer's own
+      # pre-commit check goes red on the sync PR. Mirrors the install steps in
+      # the devctl-generated zz_generated.pre-commit.yaml; helm itself is
+      # preinstalled on the runner.
+      - name: Install helm-docs for pre-commit
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: helm-docs
+          version: ${{ inputs.helm_docs_version }}
+          download_url: "https://github.com/norwoodj/helm-docs/releases/download/v${version}/helm-docs_${version}_Linux_x86_64.tar.gz"
+          tarball_binary_path: "helm-docs"
+          smoke_test: "${binary} --version"
+      - name: Cache helm-values-schema-json plugin
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        id: cache_schema
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /home/runner/.local/share/helm/plugins/helm-values-schema-json
+          key: ${{ runner.os }}-${{ inputs.helm_values_schema_json_version }}-schema
+      - name: Install helm-values-schema-json plugin
+        if: hashFiles('.pre-commit-config.yaml') != '' && steps.cache_schema.outputs.cache-hit != 'true'
+        env:
+          SCHEMA_PLUGIN_VERSION: ${{ inputs.helm_values_schema_json_version }}
+        run: |
+          helm plugin install https://github.com/losisin/helm-values-schema-json \
+            --version "${SCHEMA_PLUGIN_VERSION}"
+      - name: Run pre-commit
+        if: hashFiles('.pre-commit-config.yaml') != ''
+        continue-on-error: true
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        env:
+          GOGC: "20"
       - name: Commit and push
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          UPDATE_BRANCH: ${{ inputs.update_branch }}
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git config --local user.name "HeraldBot[bot]"
-          git add ${{ steps.chart.outputs.chart_dir }}/values.yaml ${{ steps.chart.outputs.chart_dir }}/values.schema.json CHANGELOG.md
+          # Add the tool updated files first
+          git add "${CHART_DIR}/values.yaml" "${CHART_DIR}/values.schema.json" CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: sync values, schema and changelog from upstream"
-          git push origin ${{ inputs.update_branch }}
+          # Add pre-commit changes to tracked files if any
+          if [[ -f ".pre-commit-config.yaml" ]]; then
+            git add -u
+            git diff --cached --quiet || git commit -m "chore: apply pre-commit fixes"
+          fi
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" \
+            "HEAD:refs/heads/${UPDATE_BRANCH}"
 
   update-pr-description:
     runs-on: ubuntu-24.04
