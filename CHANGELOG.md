@@ -13,6 +13,7 @@ Instead this file uses a date-based structure.
 ### Added
 
 - `sync-from-upstream.yaml` — add a `ci/version-locked` label to the `main#update-chart` PR to block future renovate updates to the branch.
+- `sync-from-upstream.yaml` — detect version changes in non-helm-subchart vendir entries. Previously only helm subchart dependencies listed in `Chart.yaml` were reflected in the PR and changelog, any additional vendir directories were silently ignored. The new pass iterates every directory in `vendir.yml` that is not under `<chart_dir>/charts/`, and uses `git.ref` / `githubRelease.tag` / `helmChart.version` to detect version changes. The changelog now lists all updated dependencies, and the PR title is updated to include the names of the changed dependencies.
 
 ## 2026-08-19
 
