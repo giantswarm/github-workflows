@@ -41,8 +41,40 @@ on:
 permissions: {}
 
 jobs:
+  check-lock:
+    runs-on: ubuntu-24.04
+    outputs:
+      locked: ${{ steps.lock.outputs.locked }}
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.HERALD_CLIENT_ID }}
+          private-key: ${{ secrets.HERALD_APP_KEY }}
+          permission-pull-requests: read
+      - name: Check for the ci/version-locked label
+        id: lock
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          UPDATE_BRANCH: ${{ inputs.update_branch }}
+        run: |
+          set -euo pipefail
+
+          # Only an open PR can lock the branch
+          labels=$(gh pr list --repo "${REPOSITORY}" --head "${UPDATE_BRANCH}" \
+            --state open --json labels --jq '.[].labels[].name')
+
+          if grep -qx 'ci/version-locked' <<< "${labels}"; then
+            echo "locked=true" >> "$GITHUB_OUTPUT"
+            echo "The \`${UPDATE_BRANCH}\` PR is labelled \`ci/version-locked\`. Skipping the upstream sync." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   prepare-update-branch:
     runs-on: ubuntu-24.04
+    needs: check-lock
+    if: needs.check-lock.outputs.locked != 'true'
     permissions:
       contents: write
     steps:
