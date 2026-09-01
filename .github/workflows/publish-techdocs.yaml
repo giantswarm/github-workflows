@@ -43,7 +43,8 @@ jobs:
         run: npm install --prefix "$RUNNER_TEMP/techdocs-cli" @techdocs/cli
 
       - name: Show techdocs-cli version
-        run: "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" --version
+        run: |
+          "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" --version
 
       - name: Generate mkdocs configuration
         id: generate_mkdocs_config
