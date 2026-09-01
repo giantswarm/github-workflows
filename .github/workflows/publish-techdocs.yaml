@@ -34,28 +34,16 @@ jobs:
       - name: Clone source repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Cache dependencies
-        id: cache-npm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        env:
-          cache-name: cache-node-modules
-        with:
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-          path:
-            ./node_modules
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-
-      - if: ${{ steps.cache-npm.outputs.cache-hit != 'true' }}
-        name: List the state of node modules
-        continue-on-error: true
-        run: npm list
-
+      # Install into an isolated directory instead of the repository checkout,
+      # so that npm does not try to resolve the repository's own dependency
+      # tree. That breaks in Yarn workspaces using resolution protocols npm
+      # does not understand (e.g. the "backstage:^" protocol in
+      # giantswarm/backstage).
       - name: Install techdocs-cli
-        run: npm install @techdocs/cli
+        run: npm install --prefix "$RUNNER_TEMP/techdocs-cli" @techdocs/cli
 
       - name: Show techdocs-cli version
-        run: ./node_modules/@techdocs/cli/bin/techdocs-cli --version
+        run: "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" --version
 
       - name: Generate mkdocs configuration
         id: generate_mkdocs_config
@@ -142,7 +130,7 @@ jobs:
         name: Generate documentation
         run: |
           mkdir $GITHUB_WORKSPACE/tmp-docs-output
-          $GITHUB_WORKSPACE/node_modules/@techdocs/cli/bin/techdocs-cli \
+          "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" \
             generate --verbose --output-dir=$GITHUB_WORKSPACE/tmp-docs-output
 
       - if: ${{ steps.generate_mkdocs_config.outputs.content_found == 'true' }}
@@ -156,7 +144,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
           AWS_REGION: eu-central-1
         run: |
-          $GITHUB_WORKSPACE/node_modules/@techdocs/cli/bin/techdocs-cli publish \
+          "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" publish \
             --publisher-type awsS3 \
             --storage-name gs-backstage-techdocs-public \
             --entity default/component/${{ github.event.repository.name }} \
