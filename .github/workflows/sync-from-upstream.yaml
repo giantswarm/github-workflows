@@ -24,7 +24,7 @@ on:
           helm-values-schema-json plugin version installed for the pre-commit
           run. Must match HELM_VALUES_SCHEMA_JSON_VERSION in the consumer's
           zz_generated.pre-commit.yaml.
-        default: '2.5.0'
+        default: '2.6.0'
         required: false
         type: string
     secrets:

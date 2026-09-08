@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## Unreleased
 
+### Fixed
+
+- `sync-from-upstream.yaml` — bump the `helm_values_schema_json_version` default to `2.6.0`, matching devctl's pre-commit workflow template. At `2.5.0` a consumer that does not pass the input regenerated `values.schema.json` with the older plugin, and its own pre-commit check then rejected the sync PR.
+
 ## 2026-08-27
 
 ### Added
