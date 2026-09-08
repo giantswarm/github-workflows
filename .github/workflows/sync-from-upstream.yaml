@@ -16,6 +16,7 @@ on:
         description: >-
           helm-docs version installed for the pre-commit run. Must match
           HELM_DOCS_VERSION in the consumer's zz_generated.pre-commit.yaml.
+        # renovate: datasource=github-releases depName=norwoodj/helm-docs
         default: '1.14.2'
         required: false
         type: string
@@ -24,6 +25,7 @@ on:
           helm-values-schema-json plugin version installed for the pre-commit
           run. Must match HELM_VALUES_SCHEMA_JSON_VERSION in the consumer's
           zz_generated.pre-commit.yaml.
+        # renovate: datasource=github-releases depName=losisin/helm-values-schema-json
         default: '2.6.0'
         required: false
         type: string

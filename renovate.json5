@@ -19,6 +19,20 @@
       ],
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
     },
+    {
+      // Tool versions pinned as `workflow_call` input defaults, so a reusable workflow
+      // installs the same version the calling repo pins for itself. The manager above only
+      // matches `version:` keys, so these would drift silently until a consumer went red.
+      description: 'Allow updating tool versions pinned as workflow_call input defaults',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/.*\\.yaml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+default: \'(?<currentValue>.*?)\'\\n',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
+    },
   ],
   packageRules: [
     {
