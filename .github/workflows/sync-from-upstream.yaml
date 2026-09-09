@@ -146,14 +146,27 @@ jobs:
             "+refs/heads/main:refs/remotes/origin/main"
       - name: Detect chart directory
         id: chart
+        env:
+          CHART_DIR_INPUT: ${{ inputs.chart_dir }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
-          if [[ -n "${{ inputs.chart_dir }}" ]]; then
-            chart_dir="${{ inputs.chart_dir }}"
+          # Resolve the chart the same way update-chart.yaml does: the chart
+          # named after the repository, then with the -app suffix removed. A
+          # repo that ships a companion chart next to the main one (e.g.
+          # helm/kagent and helm/kagent-crds) would otherwise get whichever
+          # directory `find` lists first, and the values/schema tools below
+          # would run against the wrong chart.
+          if [[ -n "${CHART_DIR_INPUT}" ]]; then
+            chart_dir="${CHART_DIR_INPUT}"
+          elif [[ -f "helm/${REPO_NAME}/Chart.yaml" ]]; then
+            chart_dir="helm/${REPO_NAME}"
+          elif [[ -f "helm/${REPO_NAME%-app}/Chart.yaml" ]]; then
+            chart_dir="helm/${REPO_NAME%-app}"
           else
             chart_dir=$(find helm -maxdepth 2 -name "Chart.yaml" \
               ! -path "*/charts/*" \
               ! -path "helm/tests/*" \
-              -exec dirname {} \; | head -1)
+              -exec dirname {} \; | sort | head -1)
           fi
           echo "Detected chart directory: ${chart_dir}"
           echo "chart_dir=${chart_dir}" >> "$GITHUB_OUTPUT"
