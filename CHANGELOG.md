@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## Unreleased
 
+### Removed
+
+- `sync-from-upstream.yaml` — drop the `helm_values_schema_json_version` input and the helm plugin cache/install steps it fed. Since devctl#2182 the `helm-schema-<chart>` pre-commit hook pins and installs its own generator through `additional_dependencies`, so the plugin is not used by anything and the input has nothing left to feed. Merge only after devctl#2182 has shipped and consumers have regenerated: until then they still pass the input, and an undeclared input is a hard error.
+
 ### Fixed
 
 - `sync-from-upstream.yaml` — bump the `helm_values_schema_json_version` default to `2.6.0`, matching devctl's pre-commit workflow template. At `2.5.0` a consumer that does not pass the input regenerated `values.schema.json` with the older plugin, and its own pre-commit check then rejected the sync PR.
