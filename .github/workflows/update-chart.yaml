@@ -102,9 +102,14 @@ jobs:
           if [ -n "${CHART_DIR_INPUT}" ]
           then
             chart_dir="${CHART_DIR_INPUT%/}"
-            if [ "${chart_dir#helm/}" = "${chart_dir}" ] || [ ! -d "${chart_dir}" ]
+            if [[ "${chart_dir}" =~ (^|/)(\.\.?)?(/|$) ]]
             then
-              echo "::error::chart_dir input '${CHART_DIR_INPUT}' is not a directory under helm/ (e.g. helm/myapp)"
+              echo "::error::chart_dir input '${CHART_DIR_INPUT}' must be a relative path without empty, . or .. components (e.g. helm/myapp)"
+              exit 1
+            fi
+            if [ "${chart_dir#helm/}" = "${chart_dir}" ] || [ ! -f "${chart_dir}/Chart.yaml" ]
+            then
+              echo "::error::chart_dir input '${CHART_DIR_INPUT}' is not a directory under helm/ that contains Chart.yaml (e.g. helm/myapp)"
               exit 1
             fi
             chart="${chart_dir#helm/}"
