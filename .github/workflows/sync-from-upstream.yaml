@@ -112,6 +112,7 @@ jobs:
     uses: ./.github/workflows/update-chart.yaml
     with:
       branch: ${{ inputs.update_branch }}
+      chart_dir: ${{ inputs.chart_dir }}
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
     permissions:
@@ -157,7 +158,18 @@ jobs:
           # directory `find` lists first, and the values/schema tools below
           # would run against the wrong chart.
           if [[ -n "${CHART_DIR_INPUT}" ]]; then
-            chart_dir="${CHART_DIR_INPUT}"
+            # The value is joined onto /github/workspace/ for the docker steps and
+            # onto origin/main: for git show below, so it must be a plain relative
+            # path: no leading slash, no . or .. components, no trailing slash.
+            chart_dir="${CHART_DIR_INPUT%/}"
+            if [[ "${chart_dir}" == /* || "${chart_dir}" =~ (^|/)\.\.?(/|$) ]]; then
+              echo "::error::chart_dir input '${CHART_DIR_INPUT}' must be a relative path without . or .. components (e.g. helm/myapp)"
+              exit 1
+            fi
+            if [[ ! -d "${chart_dir}" || ! -f "${chart_dir}/Chart.yaml" ]]; then
+              echo "::error::chart_dir input '${CHART_DIR_INPUT}' is not a directory that contains Chart.yaml (e.g. helm/myapp)"
+              exit 1
+            fi
           elif [[ -f "helm/${REPO_NAME}/Chart.yaml" ]]; then
             chart_dir="helm/${REPO_NAME}"
           elif [[ -f "helm/${REPO_NAME%-app}/Chart.yaml" ]]; then
@@ -168,10 +180,7 @@ jobs:
               ! -path "helm/tests/*" \
               -exec dirname {} \; | sort | head -1)
           fi
-          if [[ -n "${CHART_DIR_INPUT}" && ! -f "${chart_dir}/Chart.yaml" ]]; then
-            echo "::error::chart_dir input '${CHART_DIR_INPUT}' has no Chart.yaml; check the chart_dir input"
-            exit 1
-          elif [[ -z "${chart_dir}" || ! -f "${chart_dir}/Chart.yaml" ]]; then
+          if [[ -z "${chart_dir}" || ! -f "${chart_dir}/Chart.yaml" ]]; then
             echo "::error::no Helm chart found under helm/ for repository ${REPO_NAME}; pass the chart_dir input"
             exit 1
           fi
