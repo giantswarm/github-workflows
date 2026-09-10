@@ -168,7 +168,10 @@ jobs:
               ! -path "helm/tests/*" \
               -exec dirname {} \; | sort | head -1)
           fi
-          if [[ -z "${chart_dir}" || ! -f "${chart_dir}/Chart.yaml" ]]; then
+          if [[ -n "${CHART_DIR_INPUT}" && ! -f "${chart_dir}/Chart.yaml" ]]; then
+            echo "::error::chart_dir input '${CHART_DIR_INPUT}' has no Chart.yaml; check the chart_dir input"
+            exit 1
+          elif [[ -z "${chart_dir}" || ! -f "${chart_dir}/Chart.yaml" ]]; then
             echo "::error::no Helm chart found under helm/ for repository ${REPO_NAME}; pass the chart_dir input"
             exit 1
           fi
