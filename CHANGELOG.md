@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## Unreleased
 
+### Removed
+
+- `sync-from-upstream.yaml` — drop the `helm_values_schema_json_version` input and the helm plugin cache/install steps it fed. Since devctl#2182 the `helm-schema-<chart>` pre-commit hook pins and installs its own generator through `additional_dependencies`, so the plugin is not used by anything and the input has nothing left to feed. Merge only after devctl#2182 has shipped and consumers have regenerated: until then they still pass the input, and an undeclared input is a hard error.
+
 ### Fixed
 
 - `sync-from-upstream.yaml` — when `chart_dir` is not passed, resolve the chart from the repository name (`helm/<repo>`, then `helm/<repo minus -app>`) like `update-chart.yaml` does, and fall back to a sorted `find` only when neither exists. The previous unsorted `find | head -1` picked an arbitrary directory in repos that ship a companion chart next to the main one (e.g. `helm/kagent` and `helm/kagent-crds`), so `values-sync` and `schema-gen` could run against the wrong chart and strip the app-platform keys from its schema.
