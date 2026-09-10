@@ -1,7 +1,23 @@
 name: Semantic Pull Request
 
 on:
-  workflow_call: {}
+  workflow_call:
+    inputs:
+      types:
+        description: >-
+          Allowed PR title types, newline delimited. Each entry is a regex the
+          action wraps in `^ $`. Setting this REPLACES the action's default
+          list (commitizen/conventional-commit-types) rather than extending it.
+          Empty keeps the defaults.
+        type: string
+        default: ''
+      headerPattern:
+        description: >-
+          Override the regex the action parses the title with. The capturing
+          groups must be type, scope, subject in that order. Empty keeps the
+          default from conventional-changelog-conventionalcommits.
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -17,3 +33,9 @@ jobs:
         uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # An empty string is falsy in the action's parseConfig.js, which
+          # guards every input with `if (process.env.INPUT_X)`, so a caller
+          # that passes neither gets the action's own defaults untouched.
+          types: ${{ inputs.types }}
+          headerPattern: ${{ inputs.headerPattern }}

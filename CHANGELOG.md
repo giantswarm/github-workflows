@@ -8,6 +8,10 @@ Instead this file uses a date-based structure.
 
 ## Unreleased
 
+### Added
+
+- `semantic-pull-request.yaml` — new optional `types` and `headerPattern` inputs, passed straight through to `amannn/action-semantic-pull-request`. Both default to an empty string, which the action's `parseConfig.js` treats as unset, so a caller that passes neither keeps the action's own defaults. They let a caller accept extra title types, including ones the stock parser cannot read: its `headerPattern` type group is `\w*` and so rejects any hyphenated type such as `feat-rc`.
+
 ### Fixed
 
 - `sync-from-upstream.yaml` — fail the `Detect chart directory` step with an explicit error when no chart directory can be resolved, instead of letting the following `yq` call die on `/Chart.yaml: no such file or directory`.
