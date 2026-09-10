@@ -35,7 +35,7 @@ The rules:
 
 ## Blocked by
 
-04 — `devctl reservation reserve`.
+04a — Reserve one app on one cluster, from end to end.
 
 ## User stories covered
 

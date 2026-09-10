@@ -23,7 +23,7 @@ Both commands run from a laptop, so an engineer can free a stuck lock without CI
 
 ## Blocked by
 
-04 — `devctl reservation reserve`.
+04a — Reserve one app on one cluster, from end to end.
 
 ## User stories covered
 

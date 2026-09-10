@@ -26,6 +26,7 @@ rollout.
 
 09 — `/deploy` from a pull request comment.
 02 — Render each touched cluster's collections in CI.
+04d — Safe pushes when reservations arrive together.
 
 ## User stories covered
 

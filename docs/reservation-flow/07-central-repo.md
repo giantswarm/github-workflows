@@ -28,7 +28,7 @@ largest infrastructure risk in the feature.
 
 ## Blocked by
 
-04 — `devctl reservation reserve`.
+04a — Reserve one app on one cluster, from end to end.
 
 ## User stories covered
 

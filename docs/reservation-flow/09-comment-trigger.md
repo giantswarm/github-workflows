@@ -50,6 +50,8 @@ lands.
 
 08 — Receive the dispatch, and authorize it.
 06 — Locks, scopes and refusals.
+04b — Resolve the app, and refuse what is not supported.
+04c — Durations and the cluster limits.
 
 ## User stories covered
 
