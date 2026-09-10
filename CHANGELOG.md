@@ -10,6 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Fixed
 
+- `sync-from-upstream.yaml` — skip both `values-sync` steps when the chart's `Chart.yaml` declares no dependencies. The tool reconciles a wrapper chart's values against its subcharts and exits 1 with "no dependencies found" otherwise, which failed the whole sync job for flattened charts such as giantswarm/agentgateway; the drift report and the PR body are unaffected for charts that do have dependencies.
 - `sync-from-upstream.yaml` — when `chart_dir` is not passed, resolve the chart from the repository name (`helm/<repo>`, then `helm/<repo minus -app>`) like `update-chart.yaml` does, and fall back to a sorted `find` only when neither exists. The previous unsorted `find | head -1` picked an arbitrary directory in repos that ship a companion chart next to the main one (e.g. `helm/kagent` and `helm/kagent-crds`), so `values-sync` and `schema-gen` could run against the wrong chart and strip the app-platform keys from its schema.
 - `sync-from-upstream.yaml` — bump the `helm_values_schema_json_version` default to `2.6.0`, matching devctl's pre-commit workflow template. At `2.5.0` a consumer that does not pass the input regenerated `values.schema.json` with the older plugin, and its own pre-commit check then rejected the sync PR.
 - `sync-from-upstream.yaml` — track the `helm_docs_version` and `helm_values_schema_json_version` input defaults with Renovate. The existing custom manager only matches `version:` keys, so these tool versions drifted silently until a consumer's pre-commit check went red.

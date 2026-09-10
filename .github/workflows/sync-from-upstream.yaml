@@ -170,8 +170,20 @@ jobs:
           fi
           echo "Detected chart directory: ${chart_dir}"
           echo "chart_dir=${chart_dir}" >> "$GITHUB_OUTPUT"
+          # values-sync reconciles the wrapper chart's values.yaml against its
+          # subcharts and exits 1 when Chart.yaml declares no dependencies. A
+          # flattened chart (upstream vendored onto the chart root) has none, so
+          # both values-sync steps are skipped for it instead of failing the job.
+          deps=$(yq -r '.dependencies // [] | length' "${chart_dir}/Chart.yaml")
+          if [[ "${deps}" -gt 0 ]]; then
+            echo "has_dependencies=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_dependencies=false" >> "$GITHUB_OUTPUT"
+            echo "${chart_dir}/Chart.yaml declares no dependencies; skipping values-sync" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Detect upstream values drift
         id: values_drift
+        if: steps.chart.outputs.has_dependencies == 'true'
         run: |
           config_args=()
           if [[ -f "values-sync-ignore.yaml" ]]; then
@@ -197,6 +209,7 @@ jobs:
             } >> "$GITHUB_OUTPUT"
           fi
       - name: Run values-sync
+        if: steps.chart.outputs.has_dependencies == 'true'
         run: |
           config_args=()
           if [[ -f "values-sync-ignore.yaml" ]]; then
