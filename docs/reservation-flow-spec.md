@@ -604,20 +604,18 @@ These invalidate assumptions that a reader may bring from the older documents.
 
 ### Delivery order
 
-1. **`gitsemver`:** export the branch sanitizer. Small, additive, and everything else depends on
-   matching it byte for byte.
-2. **`devctl reservation` core:** the business logic, the render assertion, the GitOps commit, and
-   the primary test seam. Validate with the CLI against `graveler` before any workflow exists.
-3. **The collections render check:** the shared Makefile target, and the CI workflow for touched
-   MCs. Roll out to `giantswarm-management-clusters`.
-4. **The central repo:** create it, provision the App, and add the reserve, release and reaper
-   workflows.
-5. **The app-repo trigger:** the comment handler, the pull-request-closed handler and the status
-   handler, plus onboarding for app repos.
-6. **The build rule:** `devctl` CircleCI generation and `architect-orb`, so a pull request builds
-   its head commit and every later commit.
-7. **Enable the first MCs:** one opt-in pull request per MC, reviewed by its owners.
-8. **Documentation:** update the handbook pages on deploying to a management cluster.
+The work is broken into 18 vertical slices, one file each, in the `reservation-flow` directory
+next to this spec. Its `README.md` holds the dependency table, and each slice file carries a
+`status` field. Take the order from there, not from this spec.
+
+Three things about that order matter here:
+
+1. **The `gitsemver` sanitizer comes first** (slice 01). It is small and additive, and everything
+   else depends on a byte-for-byte match with it.
+2. **The `devctl` core is validated from a laptop against `graveler`** (slice 04a) before any
+   workflow exists. The commit is the whole product, so the CLI proves the feature on its own.
+3. **The build rule is independent** (slice 03). It shares no code with the rest, and a
+   reservation is worthless without it.
 
 ### Repo conventions to respect
 
