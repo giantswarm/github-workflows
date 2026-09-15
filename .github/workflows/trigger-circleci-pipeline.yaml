@@ -1,0 +1,115 @@
+# Starts a CircleCI pipeline for a pull request's head commit.
+#
+# CircleCI builds on push, not on pull request open: under the classic OAuth
+# integration nothing in a CircleCI config or in architect-orb can react to a pull
+# request being opened, and no config expression can even see the event. The
+# reservation flow needs the opposite -- a branch is built only while a pull request
+# is open for it, so the commit that was pushed before the pull request existed was
+# deliberately not built, and opening the pull request has to go back and build it.
+# This workflow is that missing trigger: GitHub sees the event, CircleCI's API v2
+# starts the pipeline.
+#
+# Call it from an app repo with:
+#
+#     on:
+#       pull_request:
+#         types: [opened, reopened]
+#     jobs:
+#       build:
+#         uses: giantswarm/github-workflows/.github/workflows/trigger-circleci-pipeline.yaml@main
+#         secrets:
+#           CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
+#
+# `reopened` matters as much as `opened`: builds are halted for the whole time a
+# pull request is closed, so a reopened one is as stale as a fresh one.
+
+name: Trigger CircleCI pipeline
+
+on:
+  workflow_call:
+    secrets:
+      CIRCLECI_API_TOKEN:
+        description: >-
+          CircleCI personal API token of a machine account. Org-level secret,
+          passed by name: `secrets: inherit` would hand this workflow, which callers
+          pin to a moving ref, every secret the caller can read. CircleCI's v2 API accepts no other kind of
+          token for triggering a pipeline.
+        required: true
+
+permissions: {}
+
+jobs:
+  trigger:
+    name: Trigger a pipeline for the pull request head
+    runs-on: ubuntu-24.04
+    # Nothing here talks to GitHub: the event payload carries everything, the
+    # request goes to CircleCI, and no repository content is needed.
+    permissions: {}
+    steps:
+      - name: Trigger the CircleCI pipeline
+        env:
+          CIRCLECI_API_TOKEN: ${{ secrets.CIRCLECI_API_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${BRANCH}" ]; then
+            echo "::error::no pull request in the triggering event" \
+              "(github.event.pull_request.head.ref is empty)." \
+              "Call this workflow from 'on: pull_request: {types: [opened, reopened]}'."
+            exit 1
+          fi
+
+          api="https://circleci.com/api/v2/project/gh/${GITHUB_REPOSITORY}/pipeline"
+
+          # The API can only ask for a branch, and only for a branch of this project.
+          # A fork's head branch does not exist here, so there is nothing to trigger;
+          # CircleCI builds those itself when the project allows it.
+          if [ "${HEAD_REPO}" != "${GITHUB_REPOSITORY}" ]; then
+            echo "::warning::pull request #${PR_NUMBER} comes from the fork ${HEAD_REPO}," \
+              "whose branch '${BRANCH}' does not exist in ${GITHUB_REPOSITORY}, so no pipeline" \
+              "can be triggered for it. Turn on 'Build forked pull requests' in the CircleCI" \
+              "project's advanced settings if these need a dev build."
+            exit 0
+          fi
+
+          # jq builds the body so a branch name containing a double quote (git allows
+          # it) stays valid JSON instead of breaking out of the string.
+          body=$(jq -nc --arg branch "${BRANCH}" '{branch: $branch}')
+          manual="curl -X POST -H 'Circle-Token: <token>' -H 'Content-Type: application/json' -d '${body}' ${api}"
+
+          # Passing the secret hands over an empty string when the org secret is not
+          # set, so the declaration above cannot catch this. Failing here is the point:
+          # a reservation on a commit that was never built is a cluster running nothing.
+          if [ -z "${CIRCLECI_API_TOKEN}" ]; then
+            echo "::error::CIRCLECI_API_TOKEN is empty, so pull request #${PR_NUMBER} cannot be built." \
+              "Pass the org secret to this workflow ('secrets: CIRCLECI_API_TOKEN: ...') and check that the" \
+              "repository can read it. Trigger by hand meanwhile: ${manual}"
+            exit 1
+          fi
+
+          # The token goes in on stdin, never as an argument: arguments are readable by
+          # every process on the runner.
+          resp=$(printf 'Circle-Token: %s\n' "${CIRCLECI_API_TOKEN}" | curl -sS -X POST \
+            -H @- \
+            -H 'Content-Type: application/json' \
+            -w '\n%{http_code}' \
+            -d "${body}" "${api}" || printf '\n000')
+          code=${resp##*$'\n'}
+          payload=${resp%$'\n'*}
+
+          if [ "${code}" != "201" ]; then
+            echo "::error::triggering a CircleCI pipeline for '${BRANCH}' failed (HTTP ${code}): ${payload}." \
+              "Trigger by hand: ${manual}"
+            exit 1
+          fi
+
+          # CircleCI resolves the branch to its current head, which is the pull request
+          # head unless a push raced this run -- in which case the newer commit is the
+          # one worth building anyway.
+          number=$(jq -r '.number' <<<"${payload}")
+          echo "triggered CircleCI pipeline #${number} for '${BRANCH}' (head ${HEAD_SHA}):" \
+            "https://app.circleci.com/pipelines/github/${GITHUB_REPOSITORY}/${number}"
