@@ -11,7 +11,7 @@ on:
           Empty keeps the defaults.
         type: string
         default: ''
-      headerPattern:
+      header_pattern:
         description: >-
           Override the regex the action parses the title with. The capturing
           groups must be type, scope, subject in that order. Empty keeps the
@@ -38,4 +38,4 @@ jobs:
           # guards every input with `if (process.env.INPUT_X)`, so a caller
           # that passes neither gets the action's own defaults untouched.
           types: ${{ inputs.types }}
-          headerPattern: ${{ inputs.headerPattern }}
+          headerPattern: ${{ inputs.header_pattern }}

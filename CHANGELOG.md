@@ -10,7 +10,7 @@ Instead this file uses a date-based structure.
 
 ### Added
 
-- `semantic-pull-request.yaml` — new optional `types` and `headerPattern` inputs, passed straight through to `amannn/action-semantic-pull-request`. Both default to an empty string, which the action's `parseConfig.js` treats as unset, so a caller that passes neither keeps the action's own defaults. They let a caller accept extra title types, including ones the stock parser cannot read: its `headerPattern` type group is `\w*` and so rejects any hyphenated type such as `feat-rc`.
+- `semantic-pull-request.yaml` — new optional `types` and `header_pattern` inputs, passed straight through to `amannn/action-semantic-pull-request`. Both default to an empty string, which the action's `parseConfig.js` treats as unset, so a caller that passes neither keeps the action's own defaults. They let a caller accept extra title types, including ones the stock parser cannot read: its `headerPattern` type group is `\w*` and so rejects any hyphenated type such as `feat-rc`.
 
 ### Fixed
 
