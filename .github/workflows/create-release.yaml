@@ -45,7 +45,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.0
+          version: v3.0.1
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
@@ -118,7 +118,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.0
+          version: v3.0.1
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
@@ -372,7 +372,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.0
+          version: v3.0.1
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
