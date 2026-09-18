@@ -135,11 +135,15 @@ jobs:
           base: ${{ needs.gather_facts.outputs.branch }}
         if: "${{ steps.commit_changes.outputs.skip != 'true' }}"
         run: |
-          if [ -z "$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')" ]; then
+          title="fix(nancy): remediate findings on ${base}"
+          number="$(gh pr list --head "${branch}" --state open --json number --jq '.[0].number')"
+          if [ -z "${number}" ]; then
             gh pr create \
-              --title "fix(nancy): remediate findings on ${base}" \
+              --title "${title}" \
               --body "Fix Nancy findings on branch ${base}" \
               --head "${branch}" \
               --base "${base}"
+          else
+            gh pr edit "${number}" --title "${title}"
           fi
           gh pr merge --auto --squash "${branch}"
