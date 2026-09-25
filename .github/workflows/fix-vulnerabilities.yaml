@@ -30,7 +30,7 @@ permissions: {}
 jobs:
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -65,7 +65,7 @@ jobs:
 
   run_nancy_fixer:
     name: Fix vulnerabilities with nancy-fixer
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs:
       - gather_facts
     if: ${{ needs.gather_facts.outputs.skip != 'true' }}
