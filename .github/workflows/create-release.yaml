@@ -20,7 +20,7 @@ permissions: {}
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Print github context JSON
         env:
@@ -28,7 +28,7 @@ jobs:
         run: echo "$GITHUB_CONTEXT"
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -100,7 +100,7 @@ jobs:
           echo "path=${path}" >> $GITHUB_OUTPUT
   update_project_go:
     name: Update project.go
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     if:
@@ -190,7 +190,7 @@ jobs:
             || echo "::warning::Auto-merge not allowed. Please adjust the repository settings."
   create_release:
     name: Create release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     needs:
@@ -272,7 +272,7 @@ jobs:
 
   create-release-branch:
     name: Create release branch
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     needs:
@@ -334,7 +334,7 @@ jobs:
 
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: ${{ inputs.build-release-artifacts && needs.gather_facts.outputs.version }}
     permissions:
       contents: write
