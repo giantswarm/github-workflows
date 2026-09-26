@@ -236,10 +236,50 @@ jobs:
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.6 \
             --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
             "${config_args[@]}"
+      # A chart whose .pre-commit-config.yaml carries devctl's helm-schema-<chart>
+      # hook builds values.schema.json with another pipeline than schema-gen
+      # (helm-values-schema-json over .schema.yaml, the $ref fix, schemalint
+      # normalize). The hook only verifies, so it cannot repair schema-gen's
+      # output, and the sync PR would fail it.
+      - name: Detect the pre-commit schema hook
+        id: schema_hook
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
+        run: |
+          id="helm-schema-$(basename "${CHART_DIR}")"
+          if [[ -f .pre-commit-config.yaml ]] &&
+             [[ -n "$(yq -r ".repos[].hooks[] | select(.id == \"${id}\") | .id" .pre-commit-config.yaml)" ]]; then
+            echo "id=${id}" >> "$GITHUB_OUTPUT"
+          fi
       - name: Run schema-gen
+        if: steps.schema_hook.outputs.id == ''
         uses: docker://gsoci.azurecr.io/giantswarm/shield-schema-gen:0.0.8
         with:
           args: --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }}
+      # Runs the hook's own definition: its pinned additional_dependencies, and
+      # its script up to the final diff, which is replaced by writing the
+      # result. The pipeline cannot drift from the hook that verifies it.
+      - name: Regenerate the schema with the pre-commit hook's pipeline
+        if: steps.schema_hook.outputs.id != ''
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
+          HOOK_ID: ${{ steps.schema_hook.outputs.id }}
+          GOTOOLCHAIN: auto
+        run: |
+          set -euo pipefail
+          select=".repos[].hooks[] | select(.id == \"${HOOK_ID}\")"
+          while IFS= read -r dep; do
+            go install "${dep}"
+          done < <(yq -r "${select} | .additional_dependencies[]" .pre-commit-config.yaml)
+          PATH="$(go env GOPATH)/bin:${PATH}"
+          script=$(yq -r "${select} | .args[0]" .pre-commit-config.yaml)
+          build=$(printf '%s\n' "${script}" | sed '/^if ! diff -u /,$d')
+          if [[ "${build}" == "${script}" ]]; then
+            echo "::error::${HOOK_ID} no longer ends in its 'if ! diff -u' check; update this step to the hook's current shape"
+            exit 1
+          fi
+          sh -c "${build}
+          cp \"\$tmp\" '${CHART_DIR}/values.schema.json'"
       - name: Detect dependency version changes
         id: detect
         env:
