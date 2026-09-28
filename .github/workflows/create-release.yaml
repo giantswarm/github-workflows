@@ -282,10 +282,10 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # Clone the whole history, not just the most recent commit.
+          # The whole history with every branch and tag, fetched with the
+          # checkout's own token, so a private repository needs no second fetch.
+          fetch-depth: 0
           persist-credentials: false
-      - name: Fetch all tags and branches
-        run: "git fetch --all"
       - name: Create long-lived release branch
         env:
           REMOTE_REPO:
@@ -324,7 +324,7 @@ jobs:
           release_branch="release-v${parent_major}.${parent_minor}.x"
           echo "release_branch=$release_branch"
 
-          if git rev-parse --verify "$release_branch" >/dev/null 2>&1; then
+          if git rev-parse --verify --quiet "refs/remotes/origin/$release_branch" >/dev/null; then
             echo "Release branch $release_branch already exists. Nothing to do here."
             exit 0
           fi
