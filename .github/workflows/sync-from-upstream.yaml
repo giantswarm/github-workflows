@@ -86,26 +86,35 @@ jobs:
           fetch-depth: 0
       - name: Prepare update branch
         env:
+          EVENT_NAME: ${{ github.event_name }}
           UPDATE_BRANCH: ${{ inputs.update_branch }}
           UPSTREAM_BRANCH: ${{ github.ref_name }}
         run: |
+          set -euo pipefail
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git fetch origin
 
-          # Base the update branch on the whole upstream (renovate) branch, not just
-          # vendir.yml. Reuse the existing update branch if present so we don't discard
-          # changes already pushed to it; otherwise create it from the renovate branch.
-          if git ls-remote --exit-code --heads origin "${UPDATE_BRANCH}" > /dev/null 2>&1; then
-            git checkout --track "origin/${UPDATE_BRANCH}"
-            # Merge the whole renovate branch in. On conflict prefer the upstream side
-            # (only vendir.yml realistically conflicts; our derived files do not).
-            git merge --no-edit -X theirs "origin/${UPSTREAM_BRANCH}"
+          # A push to the Renovate branch rebuilds the update branch from it: the
+          # whole Renovate branch, not just vendir.yml, and call-update-chart then
+          # re-applies the Giant Swarm delta with `make update-chart`. Renovate
+          # rebases and re-runs `vendir sync` on every rebase, which rewrites the
+          # vendored files without the delta; merging that into the old update
+          # branch reverted the delta and stacked one merge commit per rebase.
+          # A commit pushed to the update branch by hand is replaced as well, so a
+          # lasting change belongs in the repository's sync patches.
+          #
+          # A manual dispatch keeps the update branch and merges the dispatched
+          # branch (usually main) into it.
+          if [[ "${EVENT_NAME}" == "push" ]] ||
+             ! git ls-remote --exit-code --heads origin "${UPDATE_BRANCH}" > /dev/null 2>&1; then
+            git checkout -B "${UPDATE_BRANCH}" "origin/${UPSTREAM_BRANCH}"
+            git push --force origin "${UPDATE_BRANCH}"
           else
-            git checkout -b "${UPDATE_BRANCH}" "origin/${UPSTREAM_BRANCH}"
+            git checkout --track "origin/${UPDATE_BRANCH}"
+            git merge --no-edit -X theirs "origin/${UPSTREAM_BRANCH}"
+            git push origin "${UPDATE_BRANCH}"
           fi
-
-          git push origin "${UPDATE_BRANCH}"
 
   call-update-chart:
     needs: prepare-update-branch
@@ -113,6 +122,7 @@ jobs:
     with:
       branch: ${{ inputs.update_branch }}
       chart_dir: ${{ inputs.chart_dir }}
+      update_existing: true
     secrets:
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
     permissions:

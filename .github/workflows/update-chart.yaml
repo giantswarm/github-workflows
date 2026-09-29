@@ -14,6 +14,16 @@ on:
         description: Path to the Helm chart directory under helm/ (e.g. helm/myapp). Resolved from the repository name if not set.
         required: false
         type: string
+      update_existing:
+        description: >-
+          Run `make update-chart` on the branch even when its PR is already open,
+          and only skip opening the PR. sync-from-upstream sets it: it rebuilds
+          the update branch from the Renovate branch on every push, so the Giant
+          Swarm delta has to be re-applied every time. A push-triggered caller
+          leaves it off, since its own pushes to the branch trigger it again.
+        default: false
+        required: false
+        type: boolean
     secrets:
       TAYLORBOT_GITHUB_ACTION:
         required: true
@@ -37,6 +47,7 @@ jobs:
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
       skip: ${{ steps.pr_exists.outputs.skip }}
+      pr_exists: ${{ steps.pr_exists.outputs.pr_exists }}
     steps:
       - name: Gather facts
         id: gather_facts
@@ -62,14 +73,21 @@ jobs:
         id: pr_exists
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          UPDATE_EXISTING: ${{ inputs.update_existing }}
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           if gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state | grep -i 'open' > /dev/null; then
             gh pr view --repo "${{ github.repository }}" "${branch}"
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "pr_exists=true" >> "$GITHUB_OUTPUT"
+            if [[ "${UPDATE_EXISTING}" == "true" ]]; then
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "pr_exists=false" >> "$GITHUB_OUTPUT"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
   create_update_pr:
     name: Create update PR
@@ -135,15 +153,24 @@ jobs:
           git config --local user.email "dev@giantswarm.io"
           git config --local user.name "taylorbot"
       - name: Create update commit
+        id: commit
         run: |
           git add -A
-          git commit -m "chore(chart): automated update from upstream"
+          if git diff --cached --quiet; then
+            echo "make update-chart changed nothing; nothing to push"
+            echo "committed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore(chart): automated update from upstream"
+            echo "committed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Push changes
+        if: steps.commit.outputs.committed == 'true'
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Ensure automated-update label exists
+        if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
@@ -153,6 +180,7 @@ jobs:
             --description "Used to identify automated updates from upstream-forks" \
             --force
       - name: Update PR
+        if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
           GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ needs.gather_facts.outputs.base }}"
