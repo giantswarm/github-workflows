@@ -42,7 +42,7 @@ jobs:
           git fetch origin main
 
           # Get the list of modified files between the current branch and the main branch
-          MODIFIED_FILES=$(git diff --name-only --diff-filter=d origin/main HEAD | grep -E 'management-clusters/.*/cluster-app-manifests.yaml' || true)
+          MODIFIED_FILES=$(git diff --name-only --diff-filter=d origin/main HEAD | grep -E '^management-clusters/.*/cluster-app-manifests\.yaml$' || true)
 
           if [ -z "$MODIFIED_FILES" ]; then
             echo "No relevant modified values files detected."
