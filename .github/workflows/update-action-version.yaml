@@ -25,7 +25,7 @@ permissions: {}
 jobs:
   get_version:
     name: Get version from PR title
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pull-requests: read
     outputs:
@@ -63,7 +63,7 @@ jobs:
 
   update_version:
     name: Update version in action.yml
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: get_version
     if: needs.get_version.outputs.version
     permissions:
