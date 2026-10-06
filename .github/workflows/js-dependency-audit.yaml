@@ -5,7 +5,8 @@
 # Auto-discovers every directory that contains a package.json with a recognized
 # lockfile (pnpm-lock.yaml, yarn.lock, package-lock.json, npm-shrinkwrap.json)
 # and picks the right audit command per project. The job never fails on
-# vulnerabilities — the signal is the comment.
+# vulnerabilities — the signal is the comment — but it fails when the audit
+# of the PR head did not run or its output is not a completed audit's report.
 #
 # Recommended caller invocation: filter the trigger to dependency-relevant
 # files so the audit doesn't run on every PR. Example:
@@ -97,12 +98,20 @@ jobs:
               return
             fi
             if [ -f "${dir}/yarn.lock" ]; then
-              local pm
-              pm="$(jq -r '.packageManager // ""' "${dir}/package.json" 2>/dev/null || true)"
-              if [ -f "${dir}/.yarnrc.yml" ] || [[ "${pm}" =~ ^yarn@[2-9] ]]; then
-                echo "yarn-berry"
-              else
+              # Ask the Yarn that will run the audit: Corepack resolves
+              # `packageManager`, Yarn 1 hands over to a `yarnPath` release,
+              # and without either Corepack runs Yarn 1. A `.yarnrc.yml` on
+              # its own does not make a project Yarn Berry.
+              local out version
+              out="$(cd "${dir}" && yarn --version 2>&1)"
+              version="${out##*$'\n'}"
+              if ! [[ "${version}" =~ ^[0-9]+\. ]]; then
+                printf 'could not resolve the Yarn version in %s:\n%s\n' "${dir}" "${out}" >&2
+                echo "yarn-unresolved"
+              elif [[ "${version}" == 1.* ]]; then
                 echo "yarn-classic"
+              else
+                echo "yarn-berry"
               fi
               return
             fi
@@ -121,20 +130,24 @@ jobs:
             # None of these commands need node_modules — they all read from the
             # lockfile and query the registry directly. Skipping install keeps
             # large monorepo audits down from minutes to seconds.
+            # Prints the audit's exit code: a non-zero one usually means
+            # findings, so the output, not the code, tells whether it ran.
+            local rc=0
             case "${pm}" in
               npm)
-                (cd "${dir}" && npm audit --json) > "${raw}" 2> "${err}" || true
+                (cd "${dir}" && npm audit --json) > "${raw}" 2> "${err}" || rc=$?
                 ;;
               pnpm)
-                (cd "${dir}" && pnpm audit --json) > "${raw}" 2> "${err}" || true
+                (cd "${dir}" && pnpm audit --json) > "${raw}" 2> "${err}" || rc=$?
                 ;;
               yarn-berry)
-                (cd "${dir}" && yarn npm audit --all --recursive --json) > "${raw}" 2> "${err}" || true
+                (cd "${dir}" && yarn npm audit --all --recursive --json) > "${raw}" 2> "${err}" || rc=$?
                 ;;
               yarn-classic)
-                (cd "${dir}" && yarn audit --json) > "${raw}" 2> "${err}" || true
+                (cd "${dir}" && yarn audit --json) > "${raw}" 2> "${err}" || rc=$?
                 ;;
             esac
+            echo "${rc}"
           }
 
           mapfile -t PROJECTS < <(discover_projects)
@@ -155,10 +168,25 @@ jobs:
                 >> "${OUTPUT_FILE}"
               continue
             fi
+            if [ "${pm}" = "yarn-unresolved" ]; then
+              jq -nc --arg proj "${proj}" --arg pm "${pm}" \
+                '{__project__: $proj, __pm__: $pm, __error__: "could not resolve the Yarn version (see the job log)"}' \
+                >> "${OUTPUT_FILE}"
+              continue
+            fi
             echo "Auditing ${proj} (manager: ${pm})"
             raw="$(mktemp)"
             err="$(mktemp)"
-            run_audit "${proj}" "${pm}" "${raw}" "${err}"
+            rc="$(run_audit "${proj}" "${pm}" "${raw}" "${err}")"
+
+            # Yarn Berry prints nothing at all when it finds nothing.
+            if [ ! -s "${raw}" ] && [ "${pm}" = "yarn-berry" ] && [ "${rc}" = "0" ]; then
+              jq -nc --arg proj "${proj}" --arg pm "${pm}" \
+                '{__project__: $proj, __pm__: $pm, __data__: []}' \
+                >> "${OUTPUT_FILE}"
+              rm -f "${raw}" "${err}"
+              continue
+            fi
 
             if [ ! -s "${raw}" ]; then
               jq -nc --arg proj "${proj}" --arg pm "${pm}" --rawfile err "${err}" \
@@ -278,8 +306,6 @@ jobs:
                   return
               if "vulnerabilities" in data:
                   yield from parse_npm(project, data)
-                  return
-              print(f"  warning: pnpm output for {project} had no advisories or vulnerabilities key")
 
 
           def parse_yarn_berry(project, lines):
@@ -327,6 +353,20 @@ jobs:
               "yarn-classic": parse_yarn_classic,
           }
 
+          # Each check tells whether the output is a completed audit's report;
+          # anything else means the audit did not run and must not pass as
+          # "no vulnerabilities".
+          COMPLETED = {
+              "npm": lambda d: isinstance(d, dict) and "vulnerabilities" in d,
+              "pnpm": lambda d: isinstance(d, dict) and ("advisories" in d or "vulnerabilities" in d),
+              "yarn-berry": lambda d: isinstance(d, list) and (
+                  not d or any(isinstance(l, dict) and "ID" in (l.get("children") or {}) for l in d)
+              ),
+              "yarn-classic": lambda d: isinstance(d, list) and any(
+                  isinstance(l, dict) and l.get("type") == "auditSummary" for l in d
+              ),
+          }
+
 
           def load_records(path):
               findings = {}
@@ -344,17 +384,18 @@ jobs:
                           continue
                       project = rec.get("__project__") or "?"
                       pm = rec.get("__pm__") or "unknown"
+                      data = rec.get("__data__")
+                      error = rec.get("__error__")
+                      if not error and not rec.get("__skipped__") and not COMPLETED[pm](data):
+                          error = "audit did not complete: " + json.dumps(data)[:500]
                       status[project] = {
                           "pm": pm,
-                          "error": rec.get("__error__"),
+                          "error": error,
                           "skipped": rec.get("__skipped__"),
                       }
-                      if rec.get("__error__") or rec.get("__skipped__"):
+                      if error or rec.get("__skipped__"):
                           continue
-                      parser = PARSERS.get(pm)
-                      if not parser:
-                          continue
-                      for f in parser(project, rec.get("__data__")):
+                      for f in PARSERS[pm](project, data):
                           # Dedupe — same finding may surface multiple times via workspaces / dep paths.
                           findings[(f["project"], f["package"], f["advisory_id"])] = f
               return findings, status
@@ -396,7 +437,16 @@ jobs:
           delta = len(head) - len(base)
           delta_str = f"+{delta}" if delta > 0 else str(delta)
 
+          failed = sorted(p for p, s in head_status.items() if s.get("error"))
+
           lines = [MARKER, "", "## JS Dependency Audit", ""]
+          if failed:
+              lines.append(
+                  "> [!CAUTION]\n> The audit did not run on the PR head for "
+                  + ", ".join(f"`{p}`" for p in failed)
+                  + ": its vulnerabilities are unknown and the check fails. See the projects below."
+              )
+              lines.append("")
           lines.append(
               f"**{len(added_keys)} added · {len(removed_keys)} removed · "
               f"{len(head)} total ({delta_str} vs base)**"
@@ -455,6 +505,7 @@ jobs:
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
               fh.write("has_findings=true\n")
+              fh.write(f"failed_projects={' '.join(failed)}\n")
 
       - name: Find previous comment
         if: steps.build_comment.outputs.has_findings == 'true'
@@ -481,3 +532,13 @@ jobs:
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: /tmp/comment-body
+
+      - name: Fail when the audit did not run
+        # Vulnerabilities never fail the job, but an audit that did not run
+        # must not pass as a clean one.
+        if: steps.build_comment.outputs.failed_projects != ''
+        env:
+          FAILED_PROJECTS: ${{ steps.build_comment.outputs.failed_projects }}
+        run: |
+          echo "::error::The audit did not run on the PR head for: ${FAILED_PROJECTS}"
+          exit 1
