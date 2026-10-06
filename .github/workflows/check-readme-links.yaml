@@ -1,0 +1,267 @@
+name: Check README links
+
+# Reusable workflow that checks the links in a repository's README, or in the
+# markdown files passed as `files`. Two checks run:
+#
+#   - markdown-link-check: every absolute URL answers, every relative path and
+#     `#anchor` resolves inside the checkout (`helm/<chart>/values.yaml`,
+#     `CHANGELOG.md#v1`).
+#   - markdownlint MD011: no reversed link syntax `(text)[url]`.
+#
+# The checker configuration (ignore list, timeouts) lives in this repository
+# under link-check/ and is checked out next to the caller from `main`, so the
+# ignore list is maintained in one place and applies to every caller at once,
+# whatever ref the caller pins this workflow to.
+#
+# A link that goes dead because the target moved does not change the README,
+# so a pull_request trigger alone never sees it. Callers therefore run this
+# workflow on pull requests with `fail_on_error: true` (the job goes red) and
+# on a schedule with `fail_on_error: false`, which files the findings as one
+# issue, updates that issue on later runs and closes it once the links are
+# fixed, instead of failing a run nobody watches. devctl's `check_readme_links`
+# template does exactly that.
+#
+# The check itself needs `contents: read` only. `issues: write` is needed by
+# the `report` job alone, which runs only with `fail_on_error: false`.
+
+on:
+  workflow_call:
+    inputs:
+      files:
+        type: string
+        default: "README.md"
+        description: "Markdown files to check, as paths relative to the repository root separated by whitespace. No globs."
+      fail_on_error:
+        type: boolean
+        default: true
+        description: "Fail the job on a broken link. With false the findings are filed as an issue instead (for scheduled runs)."
+      issue_title:
+        type: string
+        default: "Broken links in README"
+        description: "Title of the issue filed when fail_on_error is false. An open issue with this title is updated."
+      issue_labels:
+        type: string
+        default: "kind/bug"
+        description: "Comma-separated labels for the issue filed when fail_on_error is false."
+      markdown_link_check_version:
+        type: string
+        # renovate: datasource=npm depName=markdown-link-check
+        default: '3.15.0'
+        description: "markdown-link-check npm version."
+      markdownlint_cli2_version:
+        type: string
+        # renovate: datasource=npm depName=markdownlint-cli2
+        default: '0.23.3'
+        description: "markdownlint-cli2 npm version."
+
+permissions: {}
+
+jobs:
+  check:
+    name: Check README links
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      failed: ${{ steps.result.outputs.failed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared link-check configuration
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: giantswarm/github-workflows
+          ref: main
+          path: .gs-workflows
+          sparse-checkout: link-check
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Check that the files exist
+        env:
+          FILES: ${{ inputs.files }}
+        run: |
+          missing=0
+          # shellcheck disable=SC2086 -- FILES is a whitespace-separated list by contract
+          for f in ${FILES}; do
+            if [ ! -f "${f}" ]; then
+              echo "::error::${f} does not exist in the repository; fix the \`files\` input of the calling workflow."
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - name: Install checkers
+        env:
+          MLC_VERSION: ${{ inputs.markdown_link_check_version }}
+          MDL_VERSION: ${{ inputs.markdownlint_cli2_version }}
+        run: |
+          npm install --global "markdown-link-check@${MLC_VERSION}" "markdownlint-cli2@${MDL_VERSION}"
+
+      - name: Prepare the link-check configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # A private repository's links to itself are not reachable without a
+          # token; skip them there instead of reporting them dead every week.
+          # (The schedule event payload carries no repository object, so ask
+          # the API instead of reading github.event.repository.private.)
+          private=$(gh api "repos/${REPOSITORY}" --jq .private)
+          if [ "${private}" = "true" ]; then
+            own="^https://github\\.com/${REPOSITORY}([/#?]|$)"
+            # shellcheck disable=SC2016 -- $own is a jq variable
+            jq --arg own "${own}" '.ignorePatterns += [{ "pattern": $own }]' \
+              .gs-workflows/link-check/markdown-link-check.json > "${RUNNER_TEMP}/markdown-link-check.json"
+          else
+            cp .gs-workflows/link-check/markdown-link-check.json "${RUNNER_TEMP}/markdown-link-check.json"
+          fi
+
+      - name: Check links
+        id: links
+        env:
+          FILES: ${{ inputs.files }}
+        run: |
+          set +e
+          # shellcheck disable=SC2086 -- FILES is a whitespace-separated list by contract
+          # --projectBaseUrl makes a root-relative link (`/helm/values.yaml`)
+          # resolve against the repository root, not against the file's directory.
+          markdown-link-check --quiet --config "${RUNNER_TEMP}/markdown-link-check.json" \
+            --projectBaseUrl "file://${GITHUB_WORKSPACE}" ${FILES} 2>&1 | tee link-check.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          echo "markdown-link-check exited with ${code}"
+
+      - name: Check for reversed links (markdownlint MD011)
+        id: lint
+        env:
+          FILES: ${{ inputs.files }}
+        run: |
+          # markdownlint-cli2 layers the repository's own .markdownlint* files
+          # over the --config base, so lint a copy of the files in a clean
+          # directory that holds only the MD011 configuration.
+          lintdir="${RUNNER_TEMP}/markdownlint"
+          mkdir -p "${lintdir}"
+          cp .gs-workflows/link-check/.markdownlint-cli2.jsonc "${lintdir}/"
+          # shellcheck disable=SC2086 -- FILES is a whitespace-separated list by contract
+          for f in ${FILES}; do
+            mkdir -p "${lintdir}/$(dirname "${f}")"
+            cp "${f}" "${lintdir}/${f}"
+          done
+          set +e
+          # shellcheck disable=SC2086
+          (cd "${lintdir}" && markdownlint-cli2 ${FILES}) 2>&1 | tee markdownlint.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
+          echo "markdownlint-cli2 exited with ${code}"
+
+      - name: Record the result
+        id: result
+        env:
+          LINKS_CODE: ${{ steps.links.outputs.exit_code }}
+          LINT_CODE: ${{ steps.lint.outputs.exit_code }}
+        run: |
+          if [ "${LINKS_CODE}" = "0" ] && [ "${LINT_CODE}" = "0" ]; then
+            echo "failed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write report
+        if: steps.result.outputs.failed == 'true'
+        env:
+          FILES: ${{ inputs.files }}
+          LINKS_FAILED: ${{ steps.links.outputs.exit_code != '0' }}
+          LINT_FAILED: ${{ steps.lint.outputs.exit_code != '0' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          {
+            echo "The link check of \`${FILES}\` on \`${REF_NAME}\` found problems. Run: ${RUN_URL}"
+            echo
+            if [ "${LINKS_FAILED}" = "true" ]; then
+              echo "## Dead or unresolvable links (markdown-link-check)"
+              echo
+              echo '```'
+              cat link-check.txt
+              echo '```'
+              echo
+            fi
+            if [ "${LINT_FAILED}" = "true" ]; then
+              echo "## Reversed link syntax (markdownlint MD011)"
+              echo
+              echo 'A link written as `(text)[url]` instead of `[text](url)` renders as plain text.'
+              echo
+              echo '```'
+              cat markdownlint.txt
+              echo '```'
+              echo
+            fi
+            echo "This report is written by the check-readme-links workflow (giantswarm/github-workflows)."
+            echo "Fix the links in the file, or add a pattern to \`link-check/markdown-link-check.json\` in that repository"
+            echo "when the target is private on purpose."
+          } > link-check-report.md
+          cat link-check-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: steps.result.outputs.failed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: link-check-report
+          path: link-check-report.md
+          retention-days: 7
+
+      - name: Fail on broken links
+        if: inputs.fail_on_error && steps.result.outputs.failed == 'true'
+        run: |
+          echo "::error::Broken links found, see the job summary."
+          exit 1
+
+  report:
+    name: File the findings as an issue
+    needs: check
+    if: ${{ !inputs.fail_on_error }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Find the open report issue
+        id: find-issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: ${{ inputs.issue_title }}
+        run: |
+          # shellcheck disable=SC2016 -- $t is a jq variable
+          number=$(gh issue list --state open --search "in:title \"${TITLE}\"" --json number,title \
+            | jq -r --arg t "${TITLE}" '[.[] | select(.title == $t)] | .[0].number // empty')
+          echo "number=${number}" >> "$GITHUB_OUTPUT"
+          echo "existing issue: ${number:-none}"
+
+      - name: Download report
+        if: needs.check.outputs.failed == 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: link-check-report
+
+      - name: File or update the report issue
+        if: needs.check.outputs.failed == 'true'
+        uses: peter-evans/create-issue-from-file@fca9117c27cdc29c6c4db3b86c48e4115a786710 # v6.0.0
+        with:
+          title: ${{ inputs.issue_title }}
+          content-filepath: link-check-report.md
+          labels: ${{ inputs.issue_labels }}
+          issue-number: ${{ steps.find-issue.outputs.number }}
+
+      - name: Close the report issue once the links are fixed
+        if: needs.check.outputs.failed != 'true' && steps.find-issue.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ steps.find-issue.outputs.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue close "${NUMBER}" --comment "The link check passes again: ${RUN_URL}"

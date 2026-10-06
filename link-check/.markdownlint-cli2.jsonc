@@ -1,0 +1,13 @@
+// markdownlint configuration for check-readme-links.yaml. Only the link rules
+// run here. markdownlint-cli2 layers a repository's own .markdownlint* files over
+// a --config base, so the workflow copies the files into a clean directory that
+// holds only this file and lints them there.
+//
+// MD011 catches a reversed link, `(text)[https://example.com]`, which a link
+// checker cannot: the URL inside is valid, the link just does not render.
+{
+  "config": {
+    "default": false,
+    "MD011": true
+  }
+}

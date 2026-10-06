@@ -1,0 +1,22 @@
+{
+  "ignorePatterns": [
+    { "pattern": "^https?://localhost" },
+    { "pattern": "^https?://127\\.0\\.0\\.1" },
+    { "pattern": "^https://[a-z0-9.-]+\\.gigantic\\.io" },
+    { "pattern": "^https://gsoci\\.azurecr\\.io" },
+    { "pattern": "^https://github\\.com/giantswarm/(claude-code|config|giantswarm|github|installations|isms|mc-bootstrap|opsctl|rest-api-app-collection|shared-configs|silences|tekton-resources|teleport-fleet|template|web-assets|workload-clusters-fleet)([/#?]|$)" },
+    { "pattern": "^https://devportal\\.giantswarm\\.io" },
+    { "pattern": "^https://intranet\\.giantswarm\\.io" },
+    { "pattern": "^https://gigantic\\.slack\\.com/" },
+    { "pattern": "^https://docs\\.google\\.com/(document|spreadsheets|presentation)/d/" },
+    { "pattern": "^https://drive\\.google\\.com/" }
+  ],
+  "replacementPatterns": [
+    { "pattern": "^/", "replacement": "{{BASEURL}}/" }
+  ],
+  "timeout": "20s",
+  "retryOn429": true,
+  "retryCount": 3,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206, 429]
+}
