@@ -53,6 +53,13 @@ on:
         # renovate: datasource=npm depName=markdownlint-cli2
         default: '0.23.3'
         description: "markdownlint-cli2 npm version."
+      config_ref:
+        description: >-
+          Git ref of giantswarm/github-workflows to take the link-check
+          configuration from. Leave at main unless piloting a branch.
+        required: false
+        type: string
+        default: main
 
 permissions: {}
 
@@ -74,11 +81,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: giantswarm/github-workflows
-          # The commit of this (called) workflow file, so the configuration
-          # follows the caller's pin: a branch pin for a pilot, @main in the
-          # devctl template. github.workflow_sha is the caller's commit, which
-          # this repository does not have.
-          ref: ${{ github.job_workflow_sha }}
+          # Not tied to the caller's pin on purpose: an ignore-list fix on
+          # main reaches every caller at once. A pilot of an unmerged branch
+          # passes config_ref. (github.workflow_sha is the caller's commit and
+          # github.job_workflow_sha is empty here, so neither can be used.)
+          ref: ${{ inputs.config_ref }}
           path: .gs-workflows
           sparse-checkout: link-check
           sparse-checkout-cone-mode: false
