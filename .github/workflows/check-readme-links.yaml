@@ -43,16 +43,6 @@ on:
         type: string
         default: "kind/bug"
         description: "Comma-separated labels for the issue filed when fail_on_error is false."
-      markdown_link_check_version:
-        type: string
-        # renovate: datasource=npm depName=markdown-link-check
-        default: '3.15.0'
-        description: "markdown-link-check npm version."
-      markdownlint_cli2_version:
-        type: string
-        # renovate: datasource=npm depName=markdownlint-cli2
-        default: '0.23.3'
-        description: "markdownlint-cli2 npm version."
       config_ref:
         description: >-
           Git ref of giantswarm/github-workflows to take the link-check
@@ -106,11 +96,13 @@ jobs:
           exit "${missing}"
 
       - name: Install checkers
-        env:
-          MLC_VERSION: ${{ inputs.markdown_link_check_version }}
-          MDL_VERSION: ${{ inputs.markdownlint_cli2_version }}
+        # markdown-link-check and markdownlint-cli2 are pinned in
+        # link-check/package.json and installed from its lockfile, so the
+        # versions and every transitive dependency are fixed by this
+        # repository and updated by Renovate.
         run: |
-          npm install --global "markdown-link-check@${MLC_VERSION}" "markdownlint-cli2@${MDL_VERSION}"
+          (cd .gs-workflows/link-check && npm ci --ignore-scripts --no-audit --no-fund)
+          echo "${GITHUB_WORKSPACE}/.gs-workflows/link-check/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Prepare the link-check configuration
         env:

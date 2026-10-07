@@ -1,0 +1,11 @@
+{
+  "name": "giantswarm-link-check",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned checkers for the check-readme-links reusable workflow. Installed with npm ci from the lockfile.",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "markdown-link-check": "3.15.0",
+    "markdownlint-cli2": "0.23.3"
+  }
+}

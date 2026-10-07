@@ -1,3 +1,6 @@
 
 # graphify knowledge graph (regenerable, rebuilt by the post-commit hook)
 graphify-out/
+
+# installed by the check-readme-links workflow in the caller's checkout, never committed
+link-check/node_modules/
