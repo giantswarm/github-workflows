@@ -22,7 +22,11 @@ name: Check README links
 # template does exactly that.
 #
 # The check itself needs `contents: read` only. `issues: write` is needed by
-# the `report` job alone, which runs only with `fail_on_error: false`.
+# the `report` job alone, which runs only with `fail_on_error: false` and only
+# on the repository's default branch: the issue describes that branch, so a
+# run dispatched on a feature branch must not file, update or, with a clean
+# README on the branch, close it while the default branch is still broken.
+# Such a run writes the report to the job summary and the artifact only.
 
 on:
   workflow_call:
@@ -217,6 +221,19 @@ jobs:
           path: link-check-report.md
           retention-days: 7
 
+      - name: Note that no issue is filed from this branch
+        # The schedule event carries no repository object, but a scheduled
+        # run is always on the default branch; every other event names it.
+        if: ${{ !inputs.fail_on_error && github.event_name != 'schedule' && github.ref_name != github.event.repository.default_branch }}
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          {
+            echo "This run is on \`${REF_NAME}\`, not on \`${DEFAULT_BRANCH}\`, so its findings are not filed as an issue."
+            echo "The report is in the job summary above and in the \`link-check-report\` artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Fail on broken links
         if: inputs.fail_on_error && steps.result.outputs.failed == 'true'
         run: |
@@ -226,7 +243,10 @@ jobs:
   report:
     name: File the findings as an issue
     needs: check
-    if: ${{ !inputs.fail_on_error }}
+    # Only from the default branch, see the header. A scheduled run always
+    # runs there (its event payload has no repository object to compare
+    # against); any other event carries the repository's default branch.
+    if: ${{ !inputs.fail_on_error && (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) }}
     runs-on: ubuntu-24.04
     permissions:
       issues: write
