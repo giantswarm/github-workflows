@@ -60,7 +60,7 @@ permissions: {}
 jobs:
   check:
     name: Check README links
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -247,7 +247,7 @@ jobs:
     # runs there (its event payload has no repository object to compare
     # against); any other event carries the repository's default branch.
     if: ${{ !inputs.fail_on_error && (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
     steps:
