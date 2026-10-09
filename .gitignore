@@ -1,3 +1,7 @@
 
 # graphify knowledge graph (regenerable, rebuilt by the post-commit hook)
 graphify-out/
+
+# written by a local `npm ci` or `npm install` in link-check/ when updating its lockfile; the
+# check-readme-links workflow installs into the caller's checkout, not here
+link-check/node_modules/
