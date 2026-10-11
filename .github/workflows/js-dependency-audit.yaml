@@ -1,30 +1,74 @@
-# Runs an audit against the JS dependencies of the calling repository on both
-# the PR head and the PR base, then posts a sticky PR comment summarizing
-# vulnerabilities and highlighting which ones the PR adds or removes.
+# Runs an audit against the JS dependencies of the calling repository.
 #
 # Auto-discovers every directory that contains a package.json with a recognized
 # lockfile (pnpm-lock.yaml, yarn.lock, package-lock.json, npm-shrinkwrap.json)
-# and picks the right audit command per project. The job never fails on
-# vulnerabilities — the signal is the comment — but it fails when the audit
-# of the PR head did not run or its output is not a completed audit's report.
+# and picks the right audit command per project. The job fails when the audit
+# of the checked-out head did not run or its output is not a completed audit's
+# report.
 #
-# Recommended caller invocation: filter the trigger to dependency-relevant
-# files so the audit doesn't run on every PR. Example:
+# The audit runs on whatever event the caller passes (pull_request, push to a
+# branch or tag, schedule, workflow_dispatch). On a pull request it also
+# audits the PR base and posts a sticky PR comment summarizing vulnerabilities
+# and highlighting which ones the PR adds or removes; on any other event there
+# is no base and no comment.
 #
-#   on:
-#     pull_request:
-#       paths:
-#         - '**/package.json'
-#         - '**/package-lock.json'
-#         - '**/npm-shrinkwrap.json'
-#         - '**/yarn.lock'
-#         - '**/.yarnrc'
-#         - '**/.yarnrc.yml'
-#         - '**/pnpm-lock.yaml'
-#         - '**/pnpm-workspace.yaml'
-#   jobs:
-#     audit:
-#       uses: giantswarm/github-workflows/.github/workflows/js-dependency-audit.yaml@main
+# Two modes, chosen by `fail_on_level`:
+#
+# - Report (`none`, the default): vulnerabilities never fail the job; the
+#   signal is the PR comment. A caller that runs this on pull requests only:
+#
+#     on:
+#       pull_request:
+#         paths:
+#           - '**/package.json'
+#           - '**/package-lock.json'
+#           - '**/npm-shrinkwrap.json'
+#           - '**/yarn.lock'
+#           - '**/.yarnrc'
+#           - '**/.yarnrc.yml'
+#           - '**/pnpm-lock.yaml'
+#           - '**/pnpm-workspace.yaml'
+#     jobs:
+#       audit:
+#         uses: giantswarm/github-workflows/.github/workflows/js-dependency-audit.yaml@main
+#
+# - Gate (`low`, `moderate`, `high` or `critical`): the job fails on any
+#   vulnerability at or above that level, after the PR comment is posted. A
+#   finding whose severity the audit does not report counts as critical. The
+#   job log lists every finding at or above the level. A caller that gates
+#   pull requests, the default branch, release tags and a weekly run:
+#
+#     on:
+#       pull_request:
+#         paths: [<the paths above>, '.npm-audit-ignore']
+#       push:
+#         branches: [main]
+#         tags: ['v*']
+#       schedule:
+#         - cron: '17 6 * * 1'
+#       workflow_dispatch:
+#     permissions: {}
+#     jobs:
+#       audit:
+#         uses: giantswarm/github-workflows/.github/workflows/js-dependency-audit.yaml@main
+#         permissions:
+#           contents: read
+#           pull-requests: write # the PR comment; unused on other events
+#         with:
+#           fail_on_level: high
+#
+# Time-boxed ignores (gate mode only): an advisory that cannot be fixed right
+# away goes into the file `ignore_file` names (`.npm-audit-ignore` at the
+# repository root by default; a missing file ignores nothing), one per line,
+# with an expiry date and the issue that tracks its fix:
+#
+#   GHSA-xxxx-xxxx-xxxx until=2026-11-12 # https://github.com/<owner>/<repo>/issues/<n>
+#
+# An entry is matched against the advisory's GHSA ID (taken from its URL) or
+# the audit's own advisory ID. An entry without `until=YYYY-MM-DD` or an issue
+# URL fails the job; an expired entry no longer ignores its advisory, so the
+# job fails again while the advisory is still present. `#` starts a comment.
+# Delete the entry with the fix.
 
 name: JS Dependency Audit
 
@@ -39,12 +83,19 @@ on:
         description: "Node.js version used to run the audit."
         type: string
         default: "24"
+      fail_on_level:
+        description: "Fail the job on a vulnerability at or above this severity: none (never fail on a vulnerability), low, moderate, high or critical."
+        type: string
+        default: "none"
+      ignore_file:
+        description: "Path, relative to the repository root, of the time-boxed ignore file honoured when fail_on_level is not none. Each line: '<advisory ID> until=YYYY-MM-DD # <issue URL>'. A missing file ignores nothing."
+        type: string
+        default: ".npm-audit-ignore"
 
 permissions: {}
 
 jobs:
   js-dependency-audit:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -52,6 +103,18 @@ jobs:
     env:
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
     steps:
+      - name: Check inputs
+        env:
+          FAIL_ON_LEVEL: ${{ inputs.fail_on_level }}
+        run: |
+          case "${FAIL_ON_LEVEL}" in
+            none|low|moderate|high|critical) ;;
+            *)
+              echo "::error::fail_on_level must be none, low, moderate, high or critical, not '${FAIL_ON_LEVEL}'"
+              exit 1
+              ;;
+          esac
+
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -223,24 +286,26 @@ jobs:
           BASH_EOF
           chmod +x /tmp/audit.sh
 
-      - name: Checkout PR head
+      - name: Checkout head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Checkout base branch
+        if: github.event_name == 'pull_request'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: _base_audit_ref
           persist-credentials: false
 
-      - name: Audit PR head
+      - name: Audit head
         env:
           WORKING_DIRECTORY: ${{ inputs.working_directory }}
         run: /tmp/audit.sh /tmp/audit-head.ndjson
 
       - name: Audit base branch
+        if: github.event_name == 'pull_request'
         env:
           WORKING_DIRECTORY: ${{ inputs.working_directory }}
         working-directory: ./_base_audit_ref
@@ -404,6 +469,10 @@ jobs:
           head, head_status = load_records("/tmp/audit-head.ndjson")
           base, base_status = load_records("/tmp/audit-base.ndjson")
 
+          # The head's findings, for the gate step.
+          with open("/tmp/audit-head-findings.json", "w") as fh:
+              json.dump(list(head.values()), fh)
+
           added_keys = sorted(
               set(head) - set(base),
               key=lambda k: (SEVERITY_ORDER.get(head[k]["severity"], 99), k),
@@ -508,7 +577,7 @@ jobs:
               fh.write(f"failed_projects={' '.join(failed)}\n")
 
       - name: Find previous comment
-        if: steps.build_comment.outputs.has_findings == 'true'
+        if: github.event_name == 'pull_request' && steps.build_comment.outputs.has_findings == 'true'
         uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
         continue-on-error: true
         id: fc
@@ -518,7 +587,7 @@ jobs:
           body-includes: '<!-- js-dependency-audit-summary -->'
 
       - name: Delete previous comment
-        if: steps.build_comment.outputs.has_findings == 'true' && steps.fc.outputs.comment-id != 0
+        if: github.event_name == 'pull_request' && steps.build_comment.outputs.has_findings == 'true' && steps.fc.outputs.comment-id != 0
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -527,18 +596,86 @@ jobs:
         run: gh api -X DELETE "repos/${REPO}/issues/comments/${COMMENT_ID}"
 
       - name: Create comment
-        if: steps.build_comment.outputs.has_findings == 'true'
+        if: github.event_name == 'pull_request' && steps.build_comment.outputs.has_findings == 'true'
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body-path: /tmp/comment-body
 
       - name: Fail when the audit did not run
-        # Vulnerabilities never fail the job, but an audit that did not run
-        # must not pass as a clean one.
+        # An audit that did not run must not pass as a clean one, whatever
+        # fail_on_level says.
         if: steps.build_comment.outputs.failed_projects != ''
         env:
           FAILED_PROJECTS: ${{ steps.build_comment.outputs.failed_projects }}
         run: |
-          echo "::error::The audit did not run on the PR head for: ${FAILED_PROJECTS}"
+          echo "::error::The audit did not run on the head for: ${FAILED_PROJECTS}"
           exit 1
+
+      - name: Fail on vulnerabilities at or above fail_on_level
+        if: inputs.fail_on_level != 'none'
+        env:
+          FAIL_ON_LEVEL: ${{ inputs.fail_on_level }}
+          IGNORE_FILE: ${{ inputs.ignore_file }}
+        shell: python {0}
+        run: |
+          import datetime
+          import json
+          import os
+          import re
+
+          # Higher is more severe; a severity the audit does not report counts
+          # as critical so it cannot slip through.
+          RANK = {"info": 0, "low": 1, "moderate": 2, "high": 3, "critical": 4}
+          level = os.environ["FAIL_ON_LEVEL"]
+          ignore_file = os.environ["IGNORE_FILE"]
+          today = datetime.date.today().isoformat()
+
+          ignored = {}
+          invalid = False
+          if ignore_file and os.path.isfile(ignore_file):
+              with open(ignore_file) as fh:
+                  for n, line in enumerate(fh, 1):
+                      line = line.rstrip("\n")
+                      entry = line.split("#", 1)[0].strip()
+                      if not entry:
+                          continue
+                      advisory = entry.split()[0]
+                      until = re.search(r"\buntil=(\d{4}-\d{2}-\d{2})\b", entry)
+                      if not until or not re.search(r"https://github\.com/\S+/issues/\d+", line):
+                          print(f"::error file={ignore_file},line={n}::'{line}' needs until=YYYY-MM-DD and an issue URL")
+                          invalid = True
+                          continue
+                      if until.group(1) < today:
+                          print(f"::warning file={ignore_file},line={n}::{advisory} expired on {until.group(1)} and is no longer ignored")
+                          continue
+                      ignored[advisory] = until.group(1)
+          elif ignore_file:
+              print(f"No ignore file at {ignore_file}: nothing is ignored.")
+
+          with open("/tmp/audit-head-findings.json") as fh:
+              findings = json.load(fh)
+
+          failing = 0
+          for f in sorted(findings, key=lambda f: (-RANK.get(f["severity"], 4), f["project"], f["package"], f["advisory_id"])):
+              if RANK.get(f["severity"], 4) < RANK[level]:
+                  continue
+              ids = {f["advisory_id"]}
+              ghsa = re.search(r"GHSA(?:-[0-9a-z]{4}){3}", f["url"])
+              if ghsa:
+                  ids.add(ghsa.group(0))
+              shown = ghsa.group(0) if ghsa else f["advisory_id"]
+              what = f"{f['severity']} {f['package']} {shown} in {f['project']}: {f['title']}"
+              hit = sorted(ids & ignored.keys())
+              if hit:
+                  print(f"ignored until {ignored[hit[0]]}: {what}")
+              else:
+                  print(f"::error::{what}")
+                  failing += 1
+
+          if invalid:
+              raise SystemExit(1)
+          if failing:
+              print(f"{failing} vulnerability finding(s) at or above {level} outside the ignore file.")
+              raise SystemExit(1)
+          print(f"No vulnerability at or above {level} outside the ignore file.")
