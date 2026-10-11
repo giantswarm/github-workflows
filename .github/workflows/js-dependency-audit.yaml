@@ -88,7 +88,9 @@ on:
         type: string
         default: "none"
       ignore_file:
-        description: "Path, relative to the repository root, of the time-boxed ignore file honoured when fail_on_level is not none. Each line: '<advisory ID> until=YYYY-MM-DD # <issue URL>'. A missing file ignores nothing."
+        description: >-
+          Path, relative to the repository root, of the time-boxed ignore file honoured when fail_on_level
+          is not none. Each line: '<advisory ID> until=YYYY-MM-DD # <issue URL>'. A missing file ignores nothing.
         type: string
         default: ".npm-audit-ignore"
 
