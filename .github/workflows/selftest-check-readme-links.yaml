@@ -25,6 +25,9 @@ jobs:
     uses: ./.github/workflows/check-readme-links.yaml
     permissions:
       contents: read
+      # Declared by the called workflow's report job, which GitHub checks at
+      # startup; that job does not run here (fail_on_error stays true).
+      issues: write
     with:
       files: .github/selftest/check-readme-links.md
       config_ref: ${{ github.event.pull_request.head.sha || github.sha }}
