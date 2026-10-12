@@ -9,7 +9,10 @@
     { "pattern": "^https://intranet\\.giantswarm\\.io" },
     { "pattern": "^https://gigantic\\.slack\\.com/" },
     { "pattern": "^https://docs\\.google\\.com/(document|spreadsheets|presentation)/d/" },
-    { "pattern": "^https://drive\\.google\\.com/" }
+    { "pattern": "^https://drive\\.google\\.com/" },
+    { "pattern": "^https://circleci\\.com/gh/" },
+    { "pattern": "^https://dl\\.circleci\\.com/status-badge/" },
+    { "pattern": "^https://img\\.shields\\.io/" }
   ],
   "replacementPatterns": [
     { "pattern": "^/", "replacement": "{{BASEURL}}/" }
