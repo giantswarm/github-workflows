@@ -4,7 +4,8 @@
 # an ignore-list change is live in every caller once merged. This calls the
 # real reusable workflow against the fixture in `.github/selftest/`, with the
 # configuration of the commit under test, so a badge the ignore list should
-# skip fails here first.
+# skip fails here first. Pull requests only: a run in the default branch's
+# context would install the checkers from a ref passed in by hand.
 
 name: Self-test check README links
 
@@ -15,7 +16,6 @@ on:
       - '.github/workflows/selftest-check-readme-links.yaml'
       - '.github/selftest/check-readme-links.md'
       - 'link-check/**'
-  workflow_dispatch: {}
 
 permissions: {}
 
@@ -30,4 +30,4 @@ jobs:
       issues: write
     with:
       files: .github/selftest/check-readme-links.md
-      config_ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      config_ref: ${{ github.event.pull_request.head.sha }}
