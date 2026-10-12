@@ -131,14 +131,36 @@ jobs:
         id: links
         env:
           FILES: ${{ inputs.files }}
+          CONFIG: ${{ runner.temp }}/markdown-link-check.json
         run: |
           set +e
-          # shellcheck disable=SC2086 -- FILES is a whitespace-separated list by contract
-          # --projectBaseUrl makes a root-relative link (`/helm/values.yaml`)
-          # resolve against the repository root, not against the file's directory.
-          markdown-link-check --quiet --config "${RUNNER_TEMP}/markdown-link-check.json" \
-            --projectBaseUrl "file://${GITHUB_WORKSPACE}" ${FILES} 2>&1 | tee link-check.txt
-          code=${PIPESTATUS[0]}
+          # A 5xx answer says the server is unavailable for the moment
+          # (github.com answers 503 for an existing page now and then), not
+          # that the link is dead, which is a 404. The checker retries 429
+          # only, so the run is repeated here while a 5xx is among the
+          # findings, as often and as late as the configuration's retryCount
+          # and fallbackRetryDelay say; a 5xx that outlasts the retries is
+          # a warning, not a failure.
+          attempts=$(( $(jq -r '.retryCount // 2' "${CONFIG}") + 1 ))
+          delay=$(jq -r '.fallbackRetryDelay // "60s"' "${CONFIG}")
+          for attempt in $(seq 1 "${attempts}"); do
+            # shellcheck disable=SC2086 -- FILES is a whitespace-separated list by contract
+            # --projectBaseUrl makes a root-relative link (`/helm/values.yaml`)
+            # resolve against the repository root, not against the file's directory.
+            markdown-link-check --quiet --config "${CONFIG}" \
+              --projectBaseUrl "file://${GITHUB_WORKSPACE}" ${FILES} 2>&1 | tee link-check.txt
+            code=${PIPESTATUS[0]}
+            if [ "${code}" = "0" ] || [ "${attempt}" = "${attempts}" ] || ! grep -qE 'Status: 5[0-9]{2}$' link-check.txt; then
+              break
+            fi
+            echo "A link answered 5xx on attempt ${attempt} of ${attempts}; retrying in ${delay}."
+            sleep "${delay}"
+          done
+          if [ "${code}" != "0" ] && ! grep 'Status: ' link-check.txt | grep -qvE 'Status: 5[0-9]{2}$'; then
+            grep -E 'Status: 5[0-9]{2}$' link-check.txt \
+              | sed -E "s/^ *\[[^]]*\] /::warning::Unavailable on ${attempts} attempts, not a dead link: /"
+            code=0
+          fi
           echo "exit_code=${code}" >> "$GITHUB_OUTPUT"
           echo "markdown-link-check exited with ${code}"
 
