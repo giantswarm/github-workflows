@@ -117,6 +117,8 @@ jobs:
       - name: Checkout code
         if: ${{ steps.get_version.outputs.version != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Get project.go path
         id: get_project_go_path
         if: ${{ steps.get_version.outputs.version != '' }}
