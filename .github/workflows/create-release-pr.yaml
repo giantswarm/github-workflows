@@ -8,11 +8,22 @@ on:
         required: true
         type: string
     secrets:
+      RELEASE_BOT_CLIENT_ID:
+        description: Client ID of the giantswarm-release GitHub App, which pushes, tags and opens PRs.
+        required: false
+      RELEASE_BOT_PRIVATE_KEY:
+        description: Private key of the giantswarm-release GitHub App.
+        required: false
       TAYLORBOT_GITHUB_ACTION:
-        description: "Token to create the pull request"
-        required: true
+        description: Deprecated taylorbot token, used only when the giantswarm-release App secrets are not passed (giantswarm/giantswarm#2280).
+        required: false
 
 permissions: {}
+
+env:
+  # Client ID of the giantswarm-release GitHub App. Only here so a step `if:` can tell
+  # whether the App secrets were passed; the `secrets` context is not allowed there.
+  RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
 
 jobs:
   debug_info:
@@ -120,10 +131,17 @@ jobs:
           fi
           echo "is_rc=${is_rc}" >> $GITHUB_OUTPUT
 
+      - name: Generate release token
+        id: release_token
+        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Check if workflow should be skipped
         id: check_skip
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
           head="${{ steps.parse.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
@@ -177,10 +195,30 @@ jobs:
           cmd: release
         env:
           RELEASE_VERSION: ${{ needs.gather_facts.outputs.version }}
+      - name: Generate release token
+        id: release_token
+        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Set up git identity
+        env:
+          APP_TOKEN_USED: ${{ steps.release_token.outputs.token != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          set -euo pipefail
+          if [[ "${APP_TOKEN_USED}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Create commit
         env:
           version: "${{ needs.gather_facts.outputs.version }}"
@@ -189,7 +227,7 @@ jobs:
           git commit -m "chore(release): v${{ env.version }} - version packages" -m "Release-Workflow-Run: ${{ github.run_id }}"
       - name: Push changes
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
 
@@ -279,10 +317,30 @@ jobs:
             go install github.com/marwan-at-work/mod/cmd/mod@v0.9.0
             mod upgrade
           fi
+      - name: Generate release token
+        id: release_token
+        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Set up git identity
+        env:
+          APP_TOKEN_USED: ${{ steps.release_token.outputs.token != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          set -euo pipefail
+          if [[ "${APP_TOKEN_USED}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Create release commit
         env:
           version: "${{ needs.gather_facts.outputs.version }}"
@@ -291,12 +349,12 @@ jobs:
           git commit -m "chore(release): v${{ env.version }}" -m "Release-Workflow-Run: ${{ github.run_id }}"
       - name: Push changes
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Create PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           actor: "${{ github.actor }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           branch: "${{ needs.gather_facts.outputs.branch }}"

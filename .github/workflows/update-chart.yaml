@@ -25,10 +25,22 @@ on:
         required: false
         type: boolean
     secrets:
+      RELEASE_BOT_CLIENT_ID:
+        description: Client ID of the giantswarm-release GitHub App, which pushes, tags and opens PRs.
+        required: false
+      RELEASE_BOT_PRIVATE_KEY:
+        description: Private key of the giantswarm-release GitHub App.
+        required: false
       TAYLORBOT_GITHUB_ACTION:
-        required: true
+        description: Deprecated taylorbot token, used only when the giantswarm-release App secrets are not passed (giantswarm/giantswarm#2280).
+        required: false
 
 permissions: {}
+
+env:
+  # Client ID of the giantswarm-release GitHub App. Only here so a step `if:` can tell
+  # whether the App secrets were passed; the `secrets` context is not allowed there.
+  RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
 
 jobs:
   debug_info:
@@ -69,10 +81,17 @@ jobs:
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
+      - name: Generate release token
+        id: release_token
+        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Check if PR exists
         id: pr_exists
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           UPDATE_EXISTING: ${{ inputs.update_existing }}
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
@@ -148,10 +167,30 @@ jobs:
           fi
 
           make update-chart APPLICATION="${chart}"
+      - name: Generate release token
+        id: release_token
+        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Set up git identity
+        env:
+          APP_TOKEN_USED: ${{ steps.release_token.outputs.token != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          set -euo pipefail
+          if [[ "${APP_TOKEN_USED}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Create update commit
         id: commit
         run: |
@@ -166,13 +205,13 @@ jobs:
       - name: Push changes
         if: steps.commit.outputs.committed == 'true'
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Ensure automated-update label exists
         if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
           gh label create automated-update \
             --repo "${{ github.repository }}" \
@@ -182,7 +221,7 @@ jobs:
       - name: Update PR
         if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           head: "${{ needs.gather_facts.outputs.branch }}"
         run: |

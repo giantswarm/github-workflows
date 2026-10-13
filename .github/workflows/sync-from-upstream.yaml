@@ -36,9 +36,15 @@ on:
       HERALD_APP_KEY:
         description: Private key for create-github-app-token
         required: true
+      RELEASE_BOT_CLIENT_ID:
+        description: Client ID of the giantswarm-release GitHub App, passed to the update-chart workflow.
+        required: false
+      RELEASE_BOT_PRIVATE_KEY:
+        description: Private key of the giantswarm-release GitHub App, passed to the update-chart workflow.
+        required: false
       TAYLORBOT_GITHUB_ACTION:
-        description: TaylorBot token used by the update-chart workflow
-        required: true
+        description: Deprecated taylorbot token, passed to the update-chart workflow when the giantswarm-release App secrets are not (giantswarm/giantswarm#2280).
+        required: false
 
 permissions: {}
 
@@ -124,6 +130,8 @@ jobs:
       chart_dir: ${{ inputs.chart_dir }}
       update_existing: true
     secrets:
+      RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       TAYLORBOT_GITHUB_ACTION: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
     permissions:
       contents: write
