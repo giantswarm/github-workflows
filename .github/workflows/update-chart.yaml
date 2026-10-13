@@ -37,11 +37,6 @@ on:
 
 permissions: {}
 
-env:
-  # Client ID of the giantswarm-release GitHub App. Only here so a step `if:` can tell
-  # whether the App secrets were passed; the `secrets` context is not allowed there.
-  RELEASE_BOT_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-
 jobs:
   debug_info:
     name: Debug info
@@ -60,7 +55,28 @@ jobs:
       base: ${{ steps.gather_facts.outputs.base }}
       skip: ${{ steps.pr_exists.outputs.skip }}
       pr_exists: ${{ steps.pr_exists.outputs.pr_exists }}
+      use_app: ${{ steps.credentials.outputs.use_app }}
     steps:
+      - name: Check release credentials
+        id: credentials
+        env:
+          HAS_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_CLIENT_ID}" == "true" && "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "use_app=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${HAS_CLIENT_ID}" == "true" || "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "::error::Only one of RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY is passed. Pass both."
+            exit 1
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            echo "use_app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Gather facts
         id: gather_facts
         run: |
@@ -83,7 +99,7 @@ jobs:
           echo "head=${head}" >> $GITHUB_OUTPUT
       - name: Generate release token
         id: release_token
-        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        if: ${{ steps.credentials.outputs.use_app == 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
@@ -121,6 +137,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gather_facts.outputs.branch }}
+          # Without this the checkout's GITHUB_TOKEN header would authenticate the
+          # push below instead of the release token in its URL, and a push made with
+          # GITHUB_TOKEN does not trigger CI on the update PR.
+          persist-credentials: false
       - name: Install vendir
         run: |
           wget https://github.com/vmware-tanzu/carvel-vendir/releases/download/v0.32.2/vendir-linux-amd64 -O /tmp/vendir
@@ -169,27 +189,21 @@ jobs:
           make update-chart APPLICATION="${chart}"
       - name: Generate release token
         id: release_token
-        if: ${{ env.RELEASE_BOT_CLIENT_ID != '' }}
+        if: ${{ needs.gather_facts.outputs.use_app == 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
       - name: Set up git identity
         env:
-          APP_TOKEN_USED: ${{ steps.release_token.outputs.token != '' }}
-          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
+          USE_APP: ${{ needs.gather_facts.outputs.use_app }}
         run: |
-          set -euo pipefail
-          if [[ "${APP_TOKEN_USED}" == "true" ]]; then
+          if [[ "${USE_APP}" == "true" ]]; then
             git config --local user.name "giantswarm-release[bot]"
             git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
-          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
-            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+          else
             git config --local user.email "dev@giantswarm.io"
             git config --local user.name "taylorbot"
-          else
-            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
-            exit 1
           fi
       - name: Create update commit
         id: commit
