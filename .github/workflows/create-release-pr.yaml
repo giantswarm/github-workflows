@@ -254,7 +254,9 @@ jobs:
       - prepare_release_pr
     # Runs when prepare_release_pr is skipped (every repo but backstage), but not
     # when gather_facts or prepare_release_pr failed or the run was cancelled.
-    if: ${{ !cancelled() && !failure() && needs.gather_facts.outputs.skip != 'true' }}
+    # A status function in `if` replaces the implicit success(), which would skip
+    # this job whenever prepare_release_pr is skipped, so do not use success() here.
+    if: ${{ !cancelled() && !failure() && needs.gather_facts.result == 'success' && needs.gather_facts.outputs.skip != 'true' }}
     env:
       architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
     steps:
