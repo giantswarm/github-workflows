@@ -1,0 +1,33 @@
+# Self-test for `check-readme-links.yaml`.
+#
+# Callers take the link-check configuration from this repository's `main`, so
+# an ignore-list change is live in every caller once merged. This calls the
+# real reusable workflow against the fixture in `.github/selftest/`, with the
+# configuration of the commit under test, so a badge the ignore list should
+# skip fails here first. Pull requests only: a run in the default branch's
+# context would install the checkers from a ref passed in by hand.
+
+name: Self-test check README links
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/check-readme-links.yaml'
+      - '.github/workflows/selftest-check-readme-links.yaml'
+      - '.github/selftest/check-readme-links.md'
+      - 'link-check/**'
+
+permissions: {}
+
+jobs:
+  selftest:
+    name: Run check-readme-links against the fixture
+    uses: ./.github/workflows/check-readme-links.yaml
+    permissions:
+      contents: read
+      # Declared by the called workflow's report job, which GitHub checks at
+      # startup; that job does not run here (fail_on_error stays true).
+      issues: write
+    with:
+      files: .github/selftest/check-readme-links.md
+      config_ref: ${{ github.event.pull_request.head.sha }}
