@@ -187,6 +187,8 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
@@ -293,6 +295,7 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
@@ -350,6 +353,7 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
       - name: Create long-lived release branch
         env:
           REMOTE_REPO:

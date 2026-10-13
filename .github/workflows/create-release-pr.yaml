@@ -154,6 +154,8 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: read
       - name: Check if workflow should be skipped
         id: check_skip
         env:
@@ -218,6 +220,7 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
@@ -249,7 +252,9 @@ jobs:
     needs:
       - gather_facts
       - prepare_release_pr
-    if: ${{ always() && needs.gather_facts.outputs.skip != 'true' }}
+    # always() only so a skipped prepare_release_pr does not skip this job; a failed
+    # gather_facts (such as the credentials check) must still stop it.
+    if: ${{ always() && needs.gather_facts.result == 'success' && needs.gather_facts.outputs.skip != 'true' }}
     env:
       architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
     steps:
@@ -334,6 +339,9 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
