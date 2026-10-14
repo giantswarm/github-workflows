@@ -4,7 +4,8 @@
 # an ignore-list change is live in every caller once merged. This calls the
 # real reusable workflow against the fixture in `.github/selftest/`, with the
 # configuration of the commit under test, so a badge the ignore list should
-# skip fails here first. Pull requests only: a run in the default branch's
+# skip fails here first, and the links into a private repository must come
+# back as skipped once the App token has resolved them. Pull requests only: a run in the default branch's
 # context would install the checkers from a ref passed in by hand.
 
 name: Self-test check README links
@@ -31,3 +32,9 @@ jobs:
     with:
       files: .github/selftest/check-readme-links.md
       config_ref: ${{ github.event.pull_request.head.sha }}
+    # The fixture links into a private repository, which only the App token
+    # can resolve. The org secrets reach this repository by its
+    # selection; a pull request from a fork would run without them and fail.
+    secrets:
+      LINK_CHECK_APP_CLIENT_ID: ${{ secrets.LINK_CHECK_APP_CLIENT_ID }}
+      LINK_CHECK_APP_PRIVATE_KEY: ${{ secrets.LINK_CHECK_APP_PRIVATE_KEY }}

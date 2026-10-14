@@ -8,6 +8,7 @@
     { "pattern": "^https://devportal\\.giantswarm\\.io" },
     { "pattern": "^https://intranet\\.giantswarm\\.io" },
     { "pattern": "^https://gigantic\\.slack\\.com/" },
+    { "pattern": "^https://api\\.slack\\.com/apps/" },
     { "pattern": "^https://docs\\.google\\.com/(document|spreadsheets|presentation)/d/" },
     { "pattern": "^https://drive\\.google\\.com/" },
     { "pattern": "^https://circleci\\.com/gh/" },

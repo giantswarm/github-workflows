@@ -16,6 +16,23 @@ name: Check README links
 # CircleCI answers 404 for a private or no longer built project's badge, and
 # a slow badge host would redden pull requests that never touched it.
 #
+# A link into a private Giant Swarm repository answers 404 to the anonymous
+# checker although it works for a reader who is logged in. The workflow
+# tells such links from dead ones through a GitHub App that holds the
+# repository permission Contents: read and nothing else. With the caller's
+# secrets LINK_CHECK_APP_CLIENT_ID and LINK_CHECK_APP_PRIVATE_KEY
+# it mints a one-hour token and resolves every github.com/giantswarm/... and
+# raw.githubusercontent.com/giantswarm/... link through the API
+# (link-check/probe-github-links.js): a file, directory, ref, release,
+# commit or heading anchor that exists is skipped by the checker, one that
+# does not exist stays in the check and is reported dead with the reason,
+# and a page the App cannot read (issues, pull requests, Actions, wiki) is
+# skipped and listed as not checked. Links into public repositories are left
+# to the checker. A caller that does not pass the secrets keeps the static
+# ignore list in link-check/ as its only defence. The token never reaches
+# the checker or the configuration file. The App's key reads the code of
+# every private repository it is installed on, nothing writable.
+#
 # A link that goes dead because the target moved does not change the README,
 # so a pull_request trigger alone never sees it. Callers therefore run this
 # workflow on pull requests with `fail_on_error: true` (the job goes red) and
@@ -57,6 +74,16 @@ on:
         required: false
         type: string
         default: main
+    secrets:
+      LINK_CHECK_APP_CLIENT_ID:
+        required: false
+        description: >-
+          Client ID of the GitHub App (Contents: read only) that resolves links into
+          private Giant Swarm repositories through the API. Without it such links are
+          skipped only when the static ignore list names the repository.
+      LINK_CHECK_APP_PRIVATE_KEY:
+        required: false
+        description: "Private key of that GitHub App."
 
 permissions: {}
 
@@ -112,27 +139,109 @@ jobs:
           (cd .gs-workflows/link-check && npm ci --ignore-scripts --no-audit --no-fund)
           echo "${GITHUB_WORKSPACE}/.gs-workflows/link-check/node_modules/.bin" >> "$GITHUB_PATH"
 
+      - name: Find the links into Giant Swarm repositories
+        id: candidates
+        env:
+          FILES: ${{ inputs.files }}
+          # A step's `if` cannot read secrets, so this step records whether
+          # the App credentials are there and the steps below test that.
+          HAS_APP: ${{ secrets.LINK_CHECK_APP_CLIENT_ID != '' && secrets.LINK_CHECK_APP_PRIVATE_KEY != '' }}
+        run: |
+          # Every https://github.com/giantswarm/... and
+          # https://raw.githubusercontent.com/giantswarm/... URL in the checked
+          # files, without the punctuation that ends a sentence. The App token
+          # resolves them below; without the App they are left to the checker.
+          links="${RUNNER_TEMP}/gs-links.txt"
+          pattern="https://(github\.com|raw\.githubusercontent\.com)/giantswarm/[^][[:space:]()<>\"'\`]+"
+          # shellcheck disable=SC2086 # FILES is a whitespace-separated list by contract
+          { grep -ohE "${pattern}" ${FILES} || true; } | sed -E 's/[.,;:!?]+$//' | sort -u > "${links}"
+          count=$(grep -c . "${links}" || true)
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          echo "has_app=${HAS_APP}" >> "$GITHUB_OUTPUT"
+          echo "Links into Giant Swarm repositories: ${count}. App credentials passed: ${HAS_APP}."
+
+      - name: Mint an App token with Contents read
+        id: app-token
+        if: steps.candidates.outputs.has_app == 'true' && steps.candidates.outputs.count != '0'
+        # A mint that fails (App not installed, key rotated, App without
+        # Contents: read) must not fail the link check: the probe below is
+        # skipped and the static ignore list applies, which the job summary
+        # says.
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.LINK_CHECK_APP_CLIENT_ID }}
+          private-key: ${{ secrets.LINK_CHECK_APP_PRIVATE_KEY }}
+          # No `repositories`: the token covers every repository the App is
+          # installed on, so a 404 from the API means the repository does not
+          # exist. Contents: read is all the App holds.
+          owner: giantswarm
+          permission-contents: read
+
+      - name: Resolve the links through the API
+        id: probe
+        if: steps.app-token.outcome == 'success'
+        # A probe that fails (API outage, script error) must not fail the
+        # link check either: the static ignore list applies and the job
+        # summary says so.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          node .gs-workflows/link-check/probe-github-links.js \
+            --links "${RUNNER_TEMP}/gs-links.txt" --out "${RUNNER_TEMP}/gs-links.json"
+          # The lines for the job summary and the report, written once here;
+          # nothing when every link points into a public repository.
+          jq -r '
+            if ((.skip + .dead + .unchecked) | length) == 0 then empty else
+              ("Links into private Giant Swarm repositories answer 404 without a login, so they were resolved through the GitHub API instead: "
+                + "\(.skip | length) exist (not reported), "
+                + "\(.dead | length) are dead (listed here with the reason, and reported by the checker as 404), "
+                + "\(.unchecked | length) were not checked (skipped, the App cannot read those pages)."),
+              (.dead[] | "- dead: \(.url) (\(.reason))"),
+              (.unchecked[] | "- not checked: \(.url) (\(.reason))")
+            end
+          ' "${RUNNER_TEMP}/gs-links.json" > "${RUNNER_TEMP}/gs-links-summary.md"
+          echo "ran=true" >> "$GITHUB_OUTPUT"
+
       - name: Prepare the link-check configuration
         id: repo
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          PROBED: ${{ steps.probe.outputs.ran }}
         run: |
-          # A private repository's links to itself are not reachable without a
-          # token; skip them there instead of reporting them dead every week.
           # An archived repository is read-only, so the report job files
           # nothing there. (The schedule event payload carries no repository
           # object, so ask the API instead of reading github.event.repository.)
           repo=$(gh api "repos/${REPOSITORY}" --jq '"\(.private) \(.archived)"')
           read -r private archived <<< "${repo}"
           echo "archived=${archived}" >> "$GITHUB_OUTPUT"
-          if [ "${private}" = "true" ]; then
-            own="^https://github\\.com/${REPOSITORY}([/#?]|$)"
+          config="${RUNNER_TEMP}/markdown-link-check.json"
+          cp .gs-workflows/link-check/markdown-link-check.json "${config}"
+          if [ "${PROBED}" = "true" ]; then
+            # The links the App token resolved: every one that exists and
+            # every one the App cannot judge is skipped by its exact URL
+            # (`patterns` are anchored and escaped by the probe script). A
+            # static pattern that would hide a link the probe found dead
+            # (the private-repository list, kept for callers without the
+            # App) is dropped, so the checker reports that link.
+            # shellcheck disable=SC2016 # $probe is a jq variable
+            jq --slurpfile probe "${RUNNER_TEMP}/gs-links.json" '
+              ($probe[0].dead | map(.url)) as $dead
+              | .ignorePatterns |= map(select(.pattern as $p | ($dead | any(test($p))) | not))
+              | .ignorePatterns += ($probe[0].patterns | map({ "pattern": . }))
+              ' "${config}" > "${config}.new"
+            mv "${config}.new" "${config}"
+          elif [ "${private}" = "true" ]; then
+            # Without the App, a private repository's links to itself are not
+            # reachable; skip them there instead of reporting them dead every
+            # week.
+            own="^https://(github\\.com|raw\\.githubusercontent\\.com)/$(printf '%s' "${REPOSITORY}" | sed 's/\./\\./g')([/#?]|$)"
             # shellcheck disable=SC2016 # $own is a jq variable
             jq --arg own "${own}" '.ignorePatterns += [{ "pattern": $own }]' \
-              .gs-workflows/link-check/markdown-link-check.json > "${RUNNER_TEMP}/markdown-link-check.json"
-          else
-            cp .gs-workflows/link-check/markdown-link-check.json "${RUNNER_TEMP}/markdown-link-check.json"
+              "${config}" > "${config}.new"
+            mv "${config}.new" "${config}"
           fi
 
       - name: Check links
@@ -207,6 +316,30 @@ jobs:
             echo "failed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Note the links into private repositories
+        if: steps.candidates.outputs.count != '0'
+        env:
+          HAS_APP: ${{ steps.candidates.outputs.has_app }}
+          MINTED: ${{ steps.app-token.outcome }}
+          PROBED: ${{ steps.probe.outcome }}
+          FAILED: ${{ steps.result.outputs.failed }}
+        run: |
+          # Says in the job summary why a link into a private repository was
+          # or was not skipped, so nobody has to guess from the findings.
+          if [ "${HAS_APP}" != "true" ]; then
+            echo "The caller passed no link-check App credentials (the repository is not in the secrets' selection, or its generated workflow predates them)," \
+              "so links into private Giant Swarm repositories are skipped only when the static ignore list names them." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${MINTED}" != "success" ]; then
+            echo "The link-check App token could not be minted (see the step log)," \
+              "so links into private Giant Swarm repositories are skipped only when the static ignore list names them." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${PROBED}" != "success" ]; then
+            echo "The link-check probe of the links into Giant Swarm repositories failed (see the step log)," \
+              "so links into private Giant Swarm repositories are skipped only when the static ignore list names them." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${FAILED}" != "true" ] && [ -s "${RUNNER_TEMP}/gs-links-summary.md" ]; then
+            # On a failed run the report below carries these lines.
+            cat "${RUNNER_TEMP}/gs-links-summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Write report
         if: steps.result.outputs.failed == 'true'
         env:
@@ -238,9 +371,13 @@ jobs:
               echo '```'
               echo
             fi
+            if [ -s "${RUNNER_TEMP}/gs-links-summary.md" ]; then
+              cat "${RUNNER_TEMP}/gs-links-summary.md"
+              echo
+            fi
             echo "This report is written by the check-readme-links workflow (giantswarm/github-workflows)."
             echo "Fix the links in the file, or add a pattern to \`link-check/markdown-link-check.json\` in that repository"
-            echo "when the target is private on purpose."
+            echo "when the target needs a login on purpose and is not a Giant Swarm repository."
           } > link-check-report.md
           cat link-check-report.md >> "$GITHUB_STEP_SUMMARY"
 
