@@ -58,3 +58,65 @@ GHSA-xxxx-xxxx-xxxx until=2026-11-12 # https://github.com/<owner>/<repo>/issues/
 ```
 
 An entry matches the advisory's GHSA ID or the audit's own advisory ID. An entry without `until=YYYY-MM-DD` or an issue URL fails the job. An expired entry no longer ignores its advisory, so the job fails again while the advisory is still present. Delete the entry with the fix.
+
+## check-readme-links
+
+[`check-readme-links.yaml`](.github/workflows/check-readme-links.yaml) checks the links in a repository's README (or in the Markdown files passed as `files`): every absolute URL answers, every relative path and `#anchor` resolves inside the checkout, and no link uses the reversed syntax `(text)[url]`. The checker configuration (ignore list, timeouts) lives in [`link-check/`](link-check/) and is taken from `main` for every caller, whatever ref the caller pins.
+
+| Input | Default | Meaning |
+|---|---|---|
+| `files` | `README.md` | Markdown files to check, paths relative to the repository root separated by whitespace. No globs. |
+| `fail_on_error` | `true` | Fail the job on a broken link. With `false` the findings are filed as one issue, updated on later runs and closed once the links are fixed (for scheduled runs). The issue is filed from the default branch only. |
+| `issue_title` | `Broken links in README` | Title of that issue. An open issue with this title is updated. |
+| `issue_labels` | `kind/bug` | Comma-separated labels for that issue. |
+| `config_ref` | `main` | Ref of this repository to take the link-check configuration from. Leave at `main` unless piloting a branch. |
+
+| Secret | Meaning |
+|---|---|
+| `LINK_CHECK_APP_CLIENT_ID` | Client ID of the GitHub App that resolves links into private Giant Swarm repositories (see below). Optional. |
+| `LINK_CHECK_APP_PRIVATE_KEY` | Private key of that App. Optional. |
+
+A gate on pull requests and a weekly run that files its findings as an issue, which is what devctl's `check_readme_links` template generates:
+
+```yaml
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  check-readme-links:
+    uses: giantswarm/github-workflows/.github/workflows/check-readme-links.yaml@main
+    with:
+      fail_on_error: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      issues: write # the issue filed by the scheduled run; unused on pull requests
+    secrets:
+      LINK_CHECK_APP_CLIENT_ID: ${{ secrets.LINK_CHECK_APP_CLIENT_ID }}
+      LINK_CHECK_APP_PRIVATE_KEY: ${{ secrets.LINK_CHECK_APP_PRIVATE_KEY }}
+```
+
+### Links into private Giant Swarm repositories
+
+A link into a private repository answers 404 to the anonymous checker although it works for a reader who is logged in. With the two secrets the workflow resolves every `github.com/giantswarm/…` and `raw.githubusercontent.com/giantswarm/…` link through the GitHub API instead ([`link-check/probe-github-links.js`](link-check/probe-github-links.js)): a repository, file, directory, ref, release, commit or heading anchor that exists is skipped by the checker; one that does not exist stays in the check, fails there as 404, and the job summary or the issue names it with the reason; a page the App cannot read (issues, pull requests, discussions, Actions, wiki) is skipped and listed as not checked. Links into public repositories are left to the checker. A caller that does not pass the secrets keeps the static ignore list in `link-check/markdown-link-check.json` as its only defence, and its job summary says so.
+
+The secrets belong to the organisation-owned GitHub App `giantswarm-link-check`, owned by team-honeybadger:
+
+- Repository permission Contents: read only (Metadata: read comes with it), nothing writable, no webhook, no OAuth.
+- Installed on all repositories of the organisation. This is a requirement, not a convenience: the workflow reads a 404 from the API as "repository does not exist", which is only true when no private repository sits outside the installation.
+- The two secrets are organisation secrets with visibility "Selected repositories": the app-flavour repositories plus this one (for the self-test), not every repository. A repository outside the selection runs without the probe. To add one, an organisation admin runs, with the repository id:
+
+  ```sh
+  gh api -X PUT orgs/giantswarm/actions/secrets/LINK_CHECK_APP_CLIENT_ID/repositories/<repo id>
+  gh api -X PUT orgs/giantswarm/actions/secrets/LINK_CHECK_APP_PRIVATE_KEY/repositories/<repo id>
+  ```
+
+  or replaces the whole list with `gh api -X PUT orgs/giantswarm/actions/secrets/<name>/repositories --input selection.json`, where the file holds `{"selected_repository_ids": [...]}`.
+- The token minted in a run lives one hour and stays in the job; it never reaches the checker or the configuration file.
+- Key rotation is on demand (suspected leak, an admin leaves, GitHub asks): generate a new private key in the App settings, `gh secret set LINK_CHECK_APP_PRIVATE_KEY --org giantswarm < new.pem` (visibility and selection are kept), delete the old key. No release is needed; the next run uses the new key.
