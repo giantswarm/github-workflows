@@ -14,3 +14,15 @@ ignores them (`link-check/markdown-link-check.json`).
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/giantswarm/github-workflows/blob/main/LICENSE)
 
 A relative link that resolves: [the changelog](/CHANGELOG.md).
+
+Links into private Giant Swarm repositories answer 404 without a login. The
+check resolves them through the GitHub API with the App token instead: a
+target that exists is skipped, one that does not exist is reported dead, and
+a page the App cannot read is skipped and listed as not checked. The
+repository below is private; every link here is expected as skipped.
+
+- Repository page: <https://github.com/giantswarm/aws-account-setup>
+- File with a heading anchor: [usage](https://github.com/giantswarm/aws-account-setup/blob/main/README.md#usage)
+- Directory: [workflows](https://github.com/giantswarm/aws-account-setup/tree/main/.github)
+- Raw file: <https://raw.githubusercontent.com/giantswarm/aws-account-setup/main/README.md>
+- Pull request, which the App cannot read: <https://github.com/giantswarm/aws-account-setup/pull/219>
