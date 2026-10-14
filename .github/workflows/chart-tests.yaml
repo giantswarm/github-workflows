@@ -1,0 +1,26 @@
+name: Chart unit tests
+
+on:
+  workflow_call: {}
+
+permissions: {}
+
+jobs:
+  helm-test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # helm-unittest renders the chart and asserts on the rendered manifests:
+      # no cluster, no image, no built chart. The Makefile target pins the
+      # plugin version, so this run and a developer's run are the same run.
+      # helm itself comes from the runner image. The target exits 0 with a
+      # message when the repository carries no suites, so a caller without
+      # chart tests stays green.
+      - name: Run chart unit tests
+        run: make helm-test
