@@ -22,5 +22,17 @@ jobs:
       # helm itself comes from the runner image. The target exits 0 with a
       # message when the repository carries no suites, so a caller without
       # chart tests stays green.
+      # Align-files ships this caller and the regenerated Makefile.gen.app.mk in
+      # one pull request. A repository that carries the caller alone has no
+      # helm-test target, and it cannot fix that here, so skip. Every other make
+      # error still fails the job.
       - name: Run chart unit tests
-        run: make helm-test
+        run: |
+          if err=$(make -n helm-test 2>&1); then
+            make helm-test
+          elif printf '%s' "$err" | grep -q "No rule to make target .helm-test."; then
+            echo "::notice::No helm-test target. Regenerate Makefile.gen.app.mk with devctl gen makefile."
+          else
+            printf '%s\n' "$err"
+            exit 1
+          fi
