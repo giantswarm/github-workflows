@@ -228,13 +228,14 @@ jobs:
       - name: Enable auto-merge for PR
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
-          base: "${{ github.ref }}"
+          GH_REPO: "${{ github.repository }}"
           branch: "${{ github.ref }}-version-bump"
-          version: "${{ needs.gather_facts.outputs.version }}"
-          title: "chore: bump version to ${{ steps.update_project_go.outputs.new_version }}"
         run: |
-          gh pr merge --auto --squash "${{ env.branch }}" \
-            || echo "::warning::Auto-merge not allowed. Please adjust the repository settings."
+          # gh finds a pull request by its branch name, not by the full ref: with
+          # refs/heads/... it answered "no pull requests found" and auto-merge was never enabled.
+          head="${branch#refs/heads/}"
+          gh pr merge --auto --squash "${head}" \
+            || echo "::warning::Could not enable auto-merge on ${head} (see the error above). Check that the repository allows auto-merge, otherwise merge the pull request by hand."
   create_release:
     name: Create release
     runs-on: ubuntu-24.04
