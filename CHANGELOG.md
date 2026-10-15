@@ -27,6 +27,9 @@ Instead this file uses a date-based structure.
 
 ### Fixed
 
+- `create-release-pr.yaml` — the `check_skip` guard against the job running on its own push works for the first time. Release branches carry `#` (`main#release#patch`), and the compare call put the branch name unencoded into the URL, everything from the first `#` on was dropped as a URL fragment and GitHub compared the base with itself: always 0 commits ahead, so the `Release-Workflow-Run:` trailer was never checked. The branch and base are now encoded, and the compare and commit lookups fail the step on an error instead of reading it as "no result" (`2>/dev/null || echo "0"`), like the open-PR check since giantswarm/giantswarm#2280.
+- `create-release.yaml`, `create-release-pr.yaml`, `update-chart.yaml` — the git identity of the `giantswarm-release` App is looked up at runtime from the token's App slug (`gh api /users/<slug>[bot]`) instead of hardcoding the bot user id in five places.
+
 - `update-chart.yaml` — the `Create update PR` checkout uses `persist-credentials: false`. The persisted `GITHUB_TOKEN` header took precedence over the token in the push URL, so the update branch was pushed as `github-actions[bot]`, and that push did not trigger CI on the update PR. This also applies to callers still on the taylorbot fallback.
 - `create-release.yaml` — the second `Checkout code` step of `gather_facts` uses `persist-credentials: false`. The job only reads `project.go`.
 - `create-release.yaml` — the step that enables auto-merge on the `project.go` version bump pull request looks the pull request up by its branch name. `gh pr merge` was given the full ref `refs/heads/<branch>-version-bump`, found no pull request for it and only warned "Auto-merge not allowed", so every bump PR waited for someone to merge it by hand. The warning now names the branch and no longer blames the repository settings for every error.
