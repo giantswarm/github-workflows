@@ -38,7 +38,7 @@ jobs:
   # Checks for the `/no_diffs_printing` opt-out. When found, the diff job is
   # skipped. Shared semantics with helm-render-diff.yaml — one command, one UX.
   check-cmp-state:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       pull-requests: read
     if: github.event_name == 'pull_request'
@@ -66,7 +66,7 @@ jobs:
 
   cmp-yaml-source:
     needs: check-cmp-state
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       pull-requests: write
