@@ -25,8 +25,15 @@ on:
         required: false
         type: boolean
     secrets:
+      RELEASE_BOT_CLIENT_ID:
+        description: Client ID of the giantswarm-release GitHub App, which pushes, tags and opens PRs.
+        required: false
+      RELEASE_BOT_PRIVATE_KEY:
+        description: Private key of the giantswarm-release GitHub App.
+        required: false
       TAYLORBOT_GITHUB_ACTION:
-        required: true
+        description: Deprecated taylorbot token, used only when the giantswarm-release App secrets are not passed (giantswarm/giantswarm#2280).
+        required: false
 
 permissions: {}
 
@@ -48,7 +55,28 @@ jobs:
       base: ${{ steps.gather_facts.outputs.base }}
       skip: ${{ steps.pr_exists.outputs.skip }}
       pr_exists: ${{ steps.pr_exists.outputs.pr_exists }}
+      use_app: ${{ steps.credentials.outputs.use_app }}
     steps:
+      - name: Check release credentials
+        id: credentials
+        env:
+          HAS_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_CLIENT_ID}" == "true" && "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "use_app=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${HAS_CLIENT_ID}" == "true" || "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "::error::Only one of RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY is passed. Pass both."
+            exit 1
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            echo "use_app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Gather facts
         id: gather_facts
         run: |
@@ -69,16 +97,31 @@ jobs:
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
+      - name: Generate release token
+        id: release_token
+        if: ${{ steps.credentials.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          # Contents read on top of Pull requests read: without it gh failed to read the repository
+          # (repository.defaultBranchRef) and the open-PR check below ran blind.
+          permission-contents: read
+          permission-pull-requests: read
       - name: Check if PR exists
         id: pr_exists
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           UPDATE_EXISTING: ${{ inputs.update_existing }}
         run: |
           head="${{ steps.gather_facts.outputs.branch }}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
-          if gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state | grep -i 'open' > /dev/null; then
-            gh pr view --repo "${{ github.repository }}" "${branch}"
+          # The open pull request of the branch. A failed read fails the step (bash -e): reading
+          # an error (a missing token permission, a rate limit) as "no PR" re-ran the job on its
+          # own push and pushed again, without end.
+          pr_url=$(gh pr list --repo "${{ github.repository }}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
+          if [[ -n "${pr_url}" ]]; then
+            echo "Open pull request: ${pr_url}"
             echo "pr_exists=true" >> "$GITHUB_OUTPUT"
             if [[ "${UPDATE_EXISTING}" == "true" ]]; then
               echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -102,6 +145,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gather_facts.outputs.branch }}
+          # Without this the checkout's GITHUB_TOKEN header would authenticate the
+          # push below instead of the release token in its URL, and a push made with
+          # GITHUB_TOKEN does not trigger CI on the update PR.
+          persist-credentials: false
       - name: Install vendir
         run: |
           wget https://github.com/vmware-tanzu/carvel-vendir/releases/download/v0.32.2/vendir-linux-amd64 -O /tmp/vendir
@@ -148,10 +195,27 @@ jobs:
           fi
 
           make update-chart APPLICATION="${chart}"
+      - name: Generate release token
+        id: release_token
+        if: ${{ needs.gather_facts.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
       - name: Set up git identity
+        env:
+          USE_APP: ${{ needs.gather_facts.outputs.use_app }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          if [[ "${USE_APP}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          else
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          fi
       - name: Create update commit
         id: commit
         run: |
@@ -166,13 +230,13 @@ jobs:
       - name: Push changes
         if: steps.commit.outputs.committed == 'true'
         env:
-          remote_repo: "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
         run: |
           git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
       - name: Ensure automated-update label exists
         if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
         run: |
           gh label create automated-update \
             --repo "${{ github.repository }}" \
@@ -182,7 +246,7 @@ jobs:
       - name: Update PR
         if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           head: "${{ needs.gather_facts.outputs.branch }}"
         run: |

@@ -12,8 +12,15 @@ on:
         type: boolean
         default: false
     secrets:
+      RELEASE_BOT_CLIENT_ID:
+        description: Client ID of the giantswarm-release GitHub App, which pushes, tags and opens PRs.
+        required: false
+      RELEASE_BOT_PRIVATE_KEY:
+        description: Private key of the giantswarm-release GitHub App.
+        required: false
       TAYLORBOT_GITHUB_ACTION:
-        required: true
+        description: Deprecated taylorbot token, used only when the giantswarm-release App secrets are not passed (giantswarm/giantswarm#2280).
+        required: false
 
 permissions: {}
 
@@ -35,6 +42,7 @@ jobs:
       project_go_path: ${{ steps.get_project_go_path.outputs.path }}
       version: ${{ steps.get_version.outputs.version }}
       is_rc: ${{ steps.get_version.outputs.is_rc }}
+      use_app: ${{ steps.credentials.outputs.use_app }}
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,9 +93,32 @@ jobs:
           echo "version=\"${version}\" is_rc=\"${is_rc}\""
           echo "version=${version}" >> $GITHUB_OUTPUT
           echo "is_rc=${is_rc}" >> $GITHUB_OUTPUT
+      - name: Check release credentials
+        id: credentials
+        if: ${{ steps.get_version.outputs.version != '' }}
+        env:
+          HAS_CLIENT_ID: ${{ secrets.RELEASE_BOT_CLIENT_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY != '' }}
+          HAS_TAYLORBOT_TOKEN: ${{ secrets.TAYLORBOT_GITHUB_ACTION != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_CLIENT_ID}" == "true" && "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "use_app=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${HAS_CLIENT_ID}" == "true" || "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "::error::Only one of RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY is passed. Pass both."
+            exit 1
+          elif [[ "${HAS_TAYLORBOT_TOKEN}" == "true" ]]; then
+            echo "::warning::No giantswarm-release App secrets passed, using the deprecated taylorbot token (giantswarm/giantswarm#2280). Regenerate the workflows with devctl."
+            echo "use_app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Pass RELEASE_BOT_CLIENT_ID and RELEASE_BOT_PRIVATE_KEY (or the deprecated TAYLORBOT_GITHUB_ACTION) to this workflow."
+            exit 1
+          fi
       - name: Checkout code
         if: ${{ steps.get_version.outputs.version != '' }}
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Get project.go path
         id: get_project_go_path
         if: ${{ steps.get_version.outputs.version != '' }}
@@ -151,10 +182,26 @@ jobs:
             echo "error: no changes in \"$file\"" >&2
             exit 1
           fi
+      - name: Generate release token
+        id: release_token
+        if: ${{ needs.gather_facts.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - name: Set up git identity
+        env:
+          USE_APP: ${{ needs.gather_facts.outputs.use_app }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          if [[ "${USE_APP}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          else
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          fi
       - name: Commit changes
         run: |
           file="${{ needs.gather_facts.outputs.project_go_path }}"
@@ -163,14 +210,14 @@ jobs:
       - name: Push changes
         env:
           REMOTE_REPO:
-            "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
+            "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
             github.repository }}.git"
           branch: "${{ github.ref }}-version-bump"
         run: |
           git push "${REMOTE_REPO}" HEAD:${{ env.branch }}
       - name: Create PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ github.ref }}"
           branch: "${{ github.ref }}-version-bump"
           version: "${{ needs.gather_facts.outputs.version }}"
@@ -180,14 +227,15 @@ jobs:
             --base ${{ env.base }} --head ${{ env.branch }} --reviewer ${{ github.actor }}
       - name: Enable auto-merge for PR
         env:
-          GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
-          base: "${{ github.ref }}"
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
+          GH_REPO: "${{ github.repository }}"
           branch: "${{ github.ref }}-version-bump"
-          version: "${{ needs.gather_facts.outputs.version }}"
-          title: "chore: bump version to ${{ steps.update_project_go.outputs.new_version }}"
         run: |
-          gh pr merge --auto --squash "${{ env.branch }}" \
-            || echo "::warning::Auto-merge not allowed. Please adjust the repository settings."
+          # gh finds a pull request by its branch name, not by the full ref: with
+          # refs/heads/... it answered "no pull requests found" and auto-merge was never enabled.
+          head="${branch#refs/heads/}"
+          gh pr merge --auto --squash "${head}" \
+            || echo "::warning::Could not enable auto-merge on ${head} (see the error above). Check that the repository allows auto-merge, otherwise merge the pull request by hand."
   create_release:
     name: Create release
     runs-on: ubuntu-24.04
@@ -243,10 +291,25 @@ jobs:
             printf '%s\n' "$entry"
             echo "__GHA_EOF__"
           } >> "$GITHUB_OUTPUT"
+      - name: Generate release token
+        id: release_token
+        if: ${{ needs.gather_facts.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
       - name: Set up git identity
+        env:
+          USE_APP: ${{ needs.gather_facts.outputs.use_app }}
         run: |
-          git config --local user.email "dev@giantswarm.io"
-          git config --local user.name "taylorbot"
+          if [[ "${USE_APP}" == "true" ]]; then
+            git config --local user.name "giantswarm-release[bot]"
+            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+          else
+            git config --local user.email "dev@giantswarm.io"
+            git config --local user.name "taylorbot"
+          fi
       - name: Create tag
         run: |
           version="${{ needs.gather_facts.outputs.version }}"
@@ -254,7 +317,7 @@ jobs:
       - name: Push tag
         env:
           REMOTE_REPO:
-            "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
+            "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
             github.repository }}.git"
         run: |
           git push "${REMOTE_REPO}" --tags
@@ -264,7 +327,7 @@ jobs:
         with:
           body: ${{ steps.changelog_reader.outputs.changes }}
           tag: "v${{ needs.gather_facts.outputs.version }}"
-          token: ${{ secrets.TAYLORBOT_GITHUB_ACTION }}
+          token: ${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}
           # Mark release-candidate versions (vX.Y.Z-rc.N) as GitHub pre-releases
           # so they don't surface as the repo's "Latest release".
           prerelease: ${{ needs.gather_facts.outputs.is_rc == 'true' }}
@@ -286,10 +349,18 @@ jobs:
           # checkout's own token, so a private repository needs no second fetch.
           fetch-depth: 0
           persist-credentials: false
+      - name: Generate release token
+        id: release_token
+        if: ${{ needs.gather_facts.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
       - name: Create long-lived release branch
         env:
           REMOTE_REPO:
-            "https://${{ github.actor }}:${{ secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
+            "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
             github.repository }}.git"
         run: |
           set -euo pipefail
@@ -348,7 +419,6 @@ jobs:
           - linux-arm64
           - windows-amd64
     env:
-      GITHUB_TOKEN: "${{ secrets.TAYLORBOT_GITHUB_ACTION }}"
       # renovate: datasource=golang-version depName=go
       GO_VERSION: 1.26.3
       ARTIFACT_DIR: bin-dist
