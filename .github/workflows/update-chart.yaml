@@ -104,7 +104,8 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          # gh pr view also reads the repository's default branch, which needs Contents read.
+          # Contents read on top of Pull requests read: without it gh failed to read the repository
+          # (repository.defaultBranchRef) and the open-PR check below ran blind.
           permission-contents: read
           permission-pull-requests: read
       - name: Check if PR exists
