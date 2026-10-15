@@ -165,23 +165,12 @@ jobs:
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
 
           # Check if PR already exists
-          # The open pull request of the branch, read so that a failure fails the step: only
-          # "no pull requests found" means there is none. Treating any other error (a missing
-          # token permission, a rate limit) as "no PR" re-ran the job on its own push and
-          # pushed again, without end.
-          if pr_state=$(gh pr view --repo "${{ github.repository }}" "${branch}" --json state --jq .state 2>pr-view.err); then
-            :
-          elif grep -q 'no pull requests found' pr-view.err; then
-            pr_state=""
-          else
-            cat pr-view.err >&2
-            echo "::error::Could not read the pull request of ${branch}."
-            exit 1
-          fi
-          if [[ "${pr_state}" == "OPEN" ]]; then
-            # --json only: a plain `gh pr view` also reads the PR's check status, which the
-            # giantswarm-release App token has no permission for.
-            gh pr view --repo "${{ github.repository }}" "${branch}" --json url --jq '"Open pull request: " + .url'
+          # The open pull request of the branch. A failed read fails the step (bash -e): reading
+          # an error (a missing token permission, a rate limit) as "no PR" re-ran the job on its
+          # own push and pushed again, without end.
+          pr_url=$(gh pr list --repo "${{ github.repository }}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
+          if [[ -n "${pr_url}" ]]; then
+            echo "Open pull request: ${pr_url}"
             echo "skip=true" >> $GITHUB_OUTPUT
             exit 0
           fi
