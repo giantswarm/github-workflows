@@ -179,10 +179,18 @@ jobs:
           # Only apply this check when the release branch is ahead of the base — if
           # ahead_by is 0, the branch was just created from the base and the trailer
           # (if present) belongs to a previous unrelated release on the base branch.
+          # Both lookups fail the step on an error, as above: reading an error as "not ahead" or
+          # "no trailer" lets the job run on its own push again. Release branches carry "#"
+          # (main#release#patch), which ends the URL path unless it is encoded.
           base="${{ steps.parse.outputs.base }}"
-          ahead_by=$(gh api "repos/${{ github.repository }}/compare/${base}...${branch}" --jq '.ahead_by' 2>/dev/null || echo "0")
+          # A release branch with a single "#" (release#minor-rc) takes its base from the push
+          # event, which a branch creation leaves empty: no base, nothing to compare against.
+          ahead_by=0
+          if [[ -n "${base}" ]]; then
+            ahead_by=$(gh api "repos/${{ github.repository }}/compare/${base//#/%23}...${branch//#/%23}" --jq '.ahead_by')
+          fi
           if [[ "$ahead_by" -gt "0" ]]; then
-            commit_message=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq '.commit.message' 2>/dev/null || echo "")
+            commit_message=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq '.commit.message')
             if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
               echo "Triggering commit was created by release workflow, skipping"
               echo "skip=true" >> $GITHUB_OUTPUT
@@ -228,10 +236,15 @@ jobs:
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
+          APP_SLUG: ${{ steps.release_token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
         run: |
           if [[ "${USE_APP}" == "true" ]]; then
-            git config --local user.name "giantswarm-release[bot]"
-            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+            # The noreply email needs the bot's user id, the API knows it from the App slug.
+            bot_name="${APP_SLUG}[bot]"
+            bot_id="$(gh api "/users/${bot_name}" --jq .id)"
+            git config --local user.name "${bot_name}"
+            git config --local user.email "${bot_id}+${bot_name}@users.noreply.github.com"
           else
             git config --local user.email "dev@giantswarm.io"
             git config --local user.name "taylorbot"
@@ -351,10 +364,15 @@ jobs:
       - name: Set up git identity
         env:
           USE_APP: ${{ needs.gather_facts.outputs.use_app }}
+          APP_SLUG: ${{ steps.release_token.outputs.app-slug }}
+          GH_TOKEN: ${{ steps.release_token.outputs.token }}
         run: |
           if [[ "${USE_APP}" == "true" ]]; then
-            git config --local user.name "giantswarm-release[bot]"
-            git config --local user.email "342014845+giantswarm-release[bot]@users.noreply.github.com"
+            # The noreply email needs the bot's user id, the API knows it from the App slug.
+            bot_name="${APP_SLUG}[bot]"
+            bot_id="$(gh api "/users/${bot_name}" --jq .id)"
+            git config --local user.name "${bot_name}"
+            git config --local user.email "${bot_id}+${bot_name}@users.noreply.github.com"
           else
             git config --local user.email "dev@giantswarm.io"
             git config --local user.name "taylorbot"
