@@ -23,7 +23,7 @@ permissions: {}
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Print github context JSON
         env:
@@ -31,7 +31,7 @@ jobs:
         run: echo "$GITHUB_CONTEXT"
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -194,7 +194,7 @@ jobs:
 
   prepare_release_pr:
     name: Prepare release PR for Backstage project
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     needs:
@@ -250,7 +250,7 @@ jobs:
 
   create_release_pr:
     name: Create release PR
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     needs:

@@ -63,7 +63,7 @@ permissions: {}
 jobs:
   check:
     name: Check README links
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -285,7 +285,7 @@ jobs:
     # Never on an archived repository: it is read-only, nobody can fix its
     # links, and GitHub refuses to file, update or close an issue there.
     if: ${{ !inputs.fail_on_error && needs.check.outputs.archived != 'true' && (github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch) }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       issues: write
     steps:
