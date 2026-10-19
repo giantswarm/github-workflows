@@ -62,6 +62,15 @@ jobs:
           for file in "${modified_files[@]}"; do
             echo "Processing file: $file"
 
+            # Skip release-<provider> charts (mctl-generated): no cluster-<provider>
+            # component in giantswarm/releases; `mctl validate` checks them instead.
+            chart_name=$(yq e '. | select(.kind == "App").spec.name' "$file")
+            if [[ "$chart_name" == release-* ]]; then
+              echo "::notice file=${file}::Skipping ${file}: chart ${chart_name} is validated by mctl validate, not this workflow"
+              echo -e "\n\n\n"
+              continue
+            fi
+
             # Extract the cluster name from the file path
             cluster_name=$(basename $(dirname "$file"))
             extracted_values_file="${cluster_name}-extracted-values.yaml"
