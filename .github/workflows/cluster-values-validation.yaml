@@ -82,7 +82,7 @@ jobs:
             release_version=$(yq e '.global.release.version' "./$extracted_values_file")
 
             # Extract the provider (suffix of spec.name, e.g., aws or azure) from the App resource
-            app_name=$(yq e '. | select(.kind == "App").spec.name' "$file")
+            app_name=$chart_name
             provider=${app_name#cluster-}
             if [ "$provider" == "aws" ]; then
               provider="capa"
