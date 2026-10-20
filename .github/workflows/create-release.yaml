@@ -486,9 +486,8 @@ jobs:
           # is falsy, so `cond && 0 || 1` always evaluates to `1`.
           fetch-depth: ${{ inputs.fetch-deep-gitlog-for-build && '0' || '1' }}
       - name: Create ${{ matrix.platform }} package
-        env:
-          PLATFORM: ${{ matrix.platform }}
-        run: make "package-${PLATFORM}"
+        # The matrix is a literal list, and a PLATFORM env var would reach make as a variable.
+        run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform
         env:
           PLATFORM: ${{ matrix.platform }}
