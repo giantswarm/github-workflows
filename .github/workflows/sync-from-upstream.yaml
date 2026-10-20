@@ -474,8 +474,10 @@ jobs:
           UPDATE_BRANCH: ${{ inputs.update_branch }}
           CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
+          set -euo pipefail
           git config --local user.email "149080493+heraldbot[bot]@users.noreply.github.com"
           git config --local user.name "HeraldBot[bot]"
+          checked_out=$(git rev-parse HEAD)
           # Add the tool updated files first
           git add "${CHART_DIR}/values.yaml" "${CHART_DIR}/values.schema.json" CHANGELOG.md
           git diff --cached --quiet || git commit -m "chore: sync values, schema and changelog from upstream"
@@ -484,8 +486,69 @@ jobs:
             git add -u
             git diff --cached --quiet || git commit -m "chore: apply pre-commit fixes"
           fi
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" \
-            "HEAD:refs/heads/${UPDATE_BRANCH}"
+          if [[ "$(git rev-parse HEAD)" == "${checked_out}" ]]; then
+            echo "Nothing changed; nothing to push"
+            exit 0
+          fi
+
+          # The update branch can move while this job runs. The push to it in
+          # call-update-chart triggers the repository's own push-triggered
+          # update-chart caller, and until the update PR is open that caller runs
+          # `make update-chart` and pushes a commit on top (the Chart.lock
+          # timestamp changes on every run). A plain push is then rejected with
+          # "fetch first" and the sync commits are lost.
+          #
+          # So a rejected push rebases the sync commits onto the moved branch and
+          # pushes again. Both sides keep their commits, and the values, schema
+          # and changelog stay valid: the other commit comes from the same
+          # `make update-chart` on the same vendored upstream. A --force-with-lease
+          # against the checked-out commit would be rejected by the same race,
+          # and one against the fetched tip would throw the other commit away.
+          # The rebase only happens when the branch moved forward; a branch
+          # force-pushed by a newer push-triggered sync run fails the job. A newer
+          # dispatched run merges instead, which the workflow-level concurrency
+          # group on the update branch (#327) handles by cancelling this run.
+          # Any other push failure, and a rebase conflict, fail the job too.
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git"
+          tracking="refs/remotes/origin/${UPDATE_BRANCH}"
+          base="${checked_out}"
+          rebases=0
+          while true; do
+            if out=$(git push "${remote}" "HEAD:refs/heads/${UPDATE_BRANCH}" 2>&1); then
+              printf '%s\n' "${out}"
+              exit 0
+            fi
+            printf '%s\n' "${out}"
+            # "cannot lock ref" and "incorrect old value": GitHub's own rejection
+            # when both pushes reach it at the same moment.
+            if ! grep -qE '\((fetch first|non-fast-forward)\)|cannot lock ref|incorrect old value' <<< "${out}"; then
+              echo "::error::push to ${UPDATE_BRANCH} failed for another reason than the branch having moved; not retrying"
+              exit 1
+            fi
+            if (( rebases == 3 )); then
+              echo "::error::push to ${UPDATE_BRANCH} was still rejected after rebasing ${rebases} times"
+              exit 1
+            fi
+            git fetch "${remote}" "+refs/heads/${UPDATE_BRANCH}:${tracking}"
+            tip=$(git rev-parse "${tracking}")
+            if ! git merge-base --is-ancestor "${base}" "${tip}"; then
+              echo "::error::${UPDATE_BRANCH} was rewritten while this job ran (now at ${tip}); a newer sync run owns it, so these commits are not pushed"
+              exit 1
+            fi
+            echo "${UPDATE_BRANCH} moved to ${tip}; rebasing the sync commits onto it"
+            # --autostash: without .pre-commit-config.yaml only the files above
+            # are committed, and a tool may have left another one modified.
+            if ! git rebase --autostash "${tip}"; then
+              echo "::error::the sync commits do not rebase cleanly onto ${UPDATE_BRANCH} at ${tip}"
+              # A rebase that refused to start leaves nothing to abort.
+              if [[ -d "$(git rev-parse --git-path rebase-merge)" || -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+                git rebase --abort
+              fi
+              exit 1
+            fi
+            base="${tip}"
+            rebases=$((rebases + 1))
+          done
 
   update-pr-description:
     runs-on: ubuntu-24.04
