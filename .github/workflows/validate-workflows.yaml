@@ -130,7 +130,12 @@ jobs:
           docker run --rm -v "$PWD:/data" -w /data \
             ghcr.io/zizmorcore/zizmor:1.31.0@sha256:5a91180aefd2c72e585a155ee15938ecc2911b64e7fade998bf79fbd16a07856 \
             --persona regular --no-online-audits --strict-collection --no-exit-codes --format json .github/workflows > "$RUNNER_TEMP/zizmor.json"
-          findings=$(jq -r '.[] | select(.ident == "template-injection") | .locations[] | select(.symbolic.kind == "Primary") | "::error file=\(.symbolic.key.Local.verbatim_path),line=\(.concrete.location.start_point.row + 1)::template-injection: pass expression values to run scripts through env instead of interpolating them"' "$RUNNER_TEMP/zizmor.json")
+          msg='template-injection: pass expression values to run scripts through env instead of interpolating them'
+          findings=$(jq -r --arg msg "$msg" '
+            .[] | select(.ident == "template-injection")
+            | .locations[] | select(.symbolic.kind == "Primary")
+            | "::error file=\(.symbolic.key.Local.verbatim_path),line=\(.concrete.location.start_point.row + 1)::\($msg)"
+          ' "$RUNNER_TEMP/zizmor.json")
           if [ -n "$findings" ]; then
             echo "$findings"
             exit 1
