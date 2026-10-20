@@ -16,6 +16,17 @@ jobs:
         with:
           persist-credentials: false
 
+      # The generated Makefile.gen.go.mk derives VERSION from `gitsemver get` and
+      # fails make when it is empty, so every `make` target needs the binary.
+      - name: Install gitsemver
+        uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
+        with:
+          binary: "gitsemver"
+          # renovate: datasource=github-releases depName=giantswarm/gitsemver
+          version: v3.0.1
+          download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-linux-amd64"
+          smoke_test: "${binary} --version"
+
       # helm-unittest renders the chart and asserts on the rendered manifests:
       # no cluster, no image, no built chart. The Makefile target pins the
       # plugin version, so this run and a developer's run are the same run.
