@@ -109,10 +109,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # Report-only: zizmor uploads every finding to the Security tab for visibility but
-      # never blocks PRs. The repo carries pre-existing findings that are tracked
+      # Report-only: zizmor uploads every finding to the Security tab for visibility. This
+      # step never fails the job; the template-injection step below is the only blocking
+      # one. The repo carries pre-existing findings of other audits that are tracked
       # separately. See giantswarm/giantswarm#36940.
-      - name: Run zizmor (non-blocking)
+      - name: Run zizmor (report-only)
         continue-on-error: true
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
