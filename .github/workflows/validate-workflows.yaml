@@ -97,7 +97,7 @@ jobs:
           actionlint -color -ignore 'SC2[0-9]{3}:' .github/workflows/*.yaml
 
   analyze-actions:
-    name: Analyze workflows with zizmor (report-only)
+    name: Analyze workflows with zizmor
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -109,12 +109,37 @@ jobs:
         with:
           persist-credentials: false
 
-      # Report-only: zizmor uploads findings to the Security tab for visibility but never
-      # blocks PRs. The repo carries pre-existing findings that are tracked separately; this
-      # scan is here to surface regressions (e.g. re-introducing `${{ toJson(github) }}` in a
-      # `run:` block) that CodeQL did not catch. See giantswarm/giantswarm#36940.
-      - name: Run zizmor (non-blocking)
+      # Report-only: zizmor uploads every finding to the Security tab for visibility. This
+      # step never fails the job; the template-injection step below is the only blocking
+      # one. The repo carries pre-existing findings of other audits that are tracked
+      # separately. See giantswarm/giantswarm#36940.
+      - name: Run zizmor (report-only)
         continue-on-error: true
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
         with:
           persona: regular
+
+      # Blocking, after the upload so a failure does not skip it: no `${{ }}` expression may
+      # sit inside a `run:` script, which is how a PR title or branch name becomes shell.
+      # Pass the value through `env:` instead. zizmor has no rule selector, so the findings
+      # are filtered on the rule id; every other audit stays report-only above.
+      - name: Block on template-injection findings
+        env:
+          # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
+          ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.31.0@sha256:5a91180aefd2c72e585a155ee15938ecc2911b64e7fade998bf79fbd16a07856
+        run: |
+          # --no-exit-codes: a non-zero exit then means zizmor itself broke, not that it found something.
+          # --strict-collection: a workflow zizmor cannot parse fails the step instead of being skipped.
+          docker run --rm -v "$PWD:/data" -w /data \
+            "$ZIZMOR_IMAGE" \
+            --persona regular --no-online-audits --strict-collection --no-exit-codes --format json .github/workflows > "$RUNNER_TEMP/zizmor.json"
+          msg='template-injection: pass expression values to run scripts through env instead of interpolating them'
+          findings=$(jq -r --arg msg "$msg" '
+            .[] | select(.ident == "template-injection")
+            | .locations[] | select(.symbolic.kind == "Primary")
+            | "::error file=\(.symbolic.key.Local.verbatim_path),line=\(.concrete.location.start_point.row + 1)::\($msg)"
+          ' "$RUNNER_TEMP/zizmor.json")
+          if [ -n "$findings" ]; then
+            echo "$findings"
+            exit 1
+          fi

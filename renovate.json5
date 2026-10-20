@@ -33,6 +33,16 @@
       ],
       versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
     },
+    {
+      description: 'Allow updating container images pinned by tag and digest in workflow env vars',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/.*\\.yaml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>docker) depName=(?<depName>.*?)\\s+\\w+: .*?:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)\\n',
+      ],
+    },
   ],
   packageRules: [
     {
