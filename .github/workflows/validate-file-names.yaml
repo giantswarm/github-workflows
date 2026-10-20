@@ -55,7 +55,7 @@ jobs:
             echo "$files"
             echo "has_files=true" >> $GITHUB_OUTPUT
             # Save files to a temporary file for the next step
-            echo "$files" > /tmp/files_to_check.txt
+            echo "$files" > "$RUNNER_TEMP/files_to_check.txt"
           fi
 
       - name: Validate file and directory names are ASCII only
@@ -72,10 +72,10 @@ jobs:
               invalid_files="${invalid_files}${file}"$'\n'
               exit_code=1
             fi
-          done < /tmp/files_to_check.txt
+          done < "$RUNNER_TEMP/files_to_check.txt"
 
           # For the job summary: a file has no size limit, an env var holds at most 128 KiB.
-          printf '%s' "$invalid_files" > /tmp/invalid_files.txt
+          printf '%s' "$invalid_files" > "$RUNNER_TEMP/invalid_files.txt"
 
           if [ $exit_code -eq 1 ]; then
             echo "invalid_files<<EOF" >> $GITHUB_OUTPUT
@@ -103,7 +103,7 @@ jobs:
               if [ -n "$file" ]; then
                 echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
               fi
-            done < /tmp/invalid_files.txt
+            done < "$RUNNER_TEMP/invalid_files.txt"
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### How to fix" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
