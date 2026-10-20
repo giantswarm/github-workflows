@@ -100,24 +100,16 @@ jobs:
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
-      - name: Generate release token
-        id: release_token
-        if: ${{ steps.credentials.outputs.use_app == 'true' }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
-        with:
-          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
-          # Contents read on top of Pull requests read: without it gh failed to read the repository
-          # (repository.defaultBranchRef) and the open-PR check below ran blind.
-          permission-contents: read
-          permission-pull-requests: read
       - name: Check for own update commit
         id: own_commit
         env:
           BRANCH: ${{ steps.gather_facts.outputs.branch }}
+          DELETED: ${{ github.event.deleted }}
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
-          HEAD_COMMIT: ${{ toJson(github.event.head_commit) }}
+          HAS_HEAD_COMMIT: ${{ github.event.head_commit != null }}
+          HEAD_COMMIT_DISTINCT: ${{ github.event.head_commit.distinct }}
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -133,16 +125,38 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # The head commit comes from the push payload. A payload without one (a branch
-          # deletion) fails the step, it is never read as "no trailer".
-          message=$(jq -er '.message' <<< "${HEAD_COMMIT}")
-          trailers=$(git interpret-trailers --parse <<< "${message}")
-          if grep -q '^Update-Chart-Workflow-Run: ' <<< "${trailers}"; then
+          if [[ "${DELETED}" == "true" ]]; then
+            echo "The branch was deleted, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The head commit comes from the push payload. A push without one fails the step,
+          # it is never read as "no trailer".
+          if [[ "${HAS_HEAD_COMMIT}" != "true" ]]; then
+            echo "::error::The push event carries no head commit"
+            exit 1
+          fi
+          # Only a commit new to the repository counts. A squash- or rebase-merged update PR
+          # leaves the trailer on main's tip, and pushing main to the branch to start a new
+          # update pushes that commit again, not distinct.
+          trailers=$(git interpret-trailers --parse <<< "${HEAD_COMMIT_MESSAGE}")
+          if [[ "${HEAD_COMMIT_DISTINCT}" == "true" ]] && grep -q '^Update-Chart-Workflow-Run: ' <<< "${trailers}"; then
             echo "Head commit ${SHA} is this workflow's own update commit, skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Generate release token
+        id: release_token
+        if: ${{ steps.credentials.outputs.use_app == 'true' && steps.own_commit.outputs.skip != 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          # Contents read on top of Pull requests read: without it gh failed to read the repository
+          # (repository.defaultBranchRef) and the open-PR check below ran blind.
+          permission-contents: read
+          permission-pull-requests: read
       - name: Check if PR exists
         id: pr_exists
         if: ${{ steps.own_commit.outputs.skip != 'true' }}
