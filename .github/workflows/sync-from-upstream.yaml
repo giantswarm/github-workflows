@@ -39,6 +39,20 @@ on:
 
 permissions: {}
 
+# Two runs on the same update branch race: a push to a Renovate branch while a
+# run is still going (Renovate rebasing, or helm-docs-regen committing to it)
+# left the older run's final push rejected. The newest run wins and the older
+# one is cancelled, which also cancels the rest of the caller's run. A push run
+# rebuilds the update branch from its Renovate branch anyway, so what it
+# replaces is lost either way: an older push run, a manual dispatch's merge of
+# main, or another Renovate branch's sync (that bump comes back with its next
+# push). A dispatch cancels whatever runs and merges main into the branch as it
+# is. Concurrency groups are per repository already. update-chart.yaml declares
+# no group of its own, so the nested call cannot deadlock against this one.
+concurrency:
+  group: sync-from-upstream-${{ inputs.update_branch }}
+  cancel-in-progress: true
+
 jobs:
   check-lock:
     runs-on: ubuntu-24.04
