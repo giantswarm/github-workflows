@@ -49,6 +49,8 @@ jobs:
       - name: Generate mkdocs configuration
         id: generate_mkdocs_config
         shell: python {0}
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           import os
           import shutil
@@ -56,7 +58,7 @@ jobs:
           pwd = os.getcwd()
           docspath = os.path.join(pwd, "docs")
 
-          output = "site_name: ${{ github.event.repository.name }}\n"
+          output = "site_name: " + os.environ["REPO_NAME"] + "\n"
           output += "docs_dir: ./docs\n"
           output += "plugins:\n"
           output += "  - techdocs-core\n"
@@ -144,9 +146,10 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
           AWS_REGION: eu-central-1
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           "$RUNNER_TEMP/techdocs-cli/node_modules/.bin/techdocs-cli" publish \
             --publisher-type awsS3 \
             --storage-name gs-backstage-techdocs-public \
-            --entity default/component/${{ github.event.repository.name }} \
+            --entity "default/component/${REPO_NAME}" \
             --directory $GITHUB_WORKSPACE/tmp-docs-output

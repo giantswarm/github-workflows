@@ -36,9 +36,10 @@ jobs:
         id: get_version
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           # List open PRs
-          prs=$(gh pr list --repo "${{ github.repository }}" --state open --json title,number,headRefName)
+          prs=$(gh pr list --repo "${REPOSITORY}" --state open --json title,number,headRefName)
 
           # Filter for release PRs matching "chore(release): v<semver>"
           # (current format) or "Release v<semver>" (legacy format).
@@ -76,8 +77,14 @@ jobs:
           persist-credentials: false
       - name: Update version in action.yml
         uses: mikefarah/yq@c14f446382944492701b16c1ddb48bb9dbe683e3 # v4.53.6
+        # The action evals cmd in a shell, so the inputs and the version (taken from a PR title)
+        # come in through env, never as ${{ }} in cmd.
+        env:
+          YQ_EXPRESSION: ${{ inputs.yq_expression }}
+          VERSION: ${{ needs.get_version.outputs.version }}
+          ACTION_YML_PATH: ${{ inputs.action_yml_path }}
         with:
-          cmd: yq -i '${{ inputs.yq_expression }} = "${{ needs.get_version.outputs.version }}"' ${{ inputs.action_yml_path }}
+          cmd: yq -i "${YQ_EXPRESSION} = strenv(VERSION)" "${ACTION_YML_PATH}"
       - name: Set up git identity
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -22,19 +22,23 @@ jobs:
 
       - name: Get list of files to validate
         id: changed-files
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           # Configure git to not escape non-ASCII characters in filenames
           git config core.quotepath false
 
           # Determine which files to validate based on trigger type
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          if [ "${EVENT_NAME}" == "workflow_dispatch" ]; then
             # For manual triggers, validate ALL files in the repository
             echo "Manual trigger detected - validating all files in repository"
             files=$(git ls-files)
           else
             # For PR or workflow_call triggers, only validate added/renamed files
-            base_ref="${{ github.event.pull_request.base.sha || github.event.before }}"
-            head_ref="${{ github.event.pull_request.head.sha || github.sha }}"
+            base_ref="${BASE_SHA}"
+            head_ref="${HEAD_SHA}"
 
             echo "Base ref: $base_ref"
             echo "Head ref: $head_ref"
@@ -82,13 +86,18 @@ jobs:
 
       - name: Generate job summary
         if: always() && steps.changed-files.outputs.has_files == 'true'
+        # File names come in through env, never as ${{ }} in the script: a path may contain
+        # $, ( and backticks, which the shell would run.
+        env:
+          VALIDATION_FAILED: ${{ steps.validate.outputs.validation_failed }}
+          INVALID_FILES: ${{ steps.validate.outputs.invalid_files }}
         run: |
-          if [ "${{ steps.validate.outputs.validation_failed }}" == "true" ]; then
+          if [ "${VALIDATION_FAILED}" == "true" ]; then
             echo "## :x: File Name Validation Failed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "The following files or directories contain non-ASCII characters in their paths:" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "${{ steps.validate.outputs.invalid_files }}" | while IFS= read -r file; do
+            echo "${INVALID_FILES}" | while IFS= read -r file; do
               if [ -n "$file" ]; then
                 echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
               fi

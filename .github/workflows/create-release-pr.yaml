@@ -160,15 +160,21 @@ jobs:
         id: check_skip
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
+          # Refs come in through env, never as ${{ }} in the script: a ref name may contain
+          # $, ( and backticks, which the shell would run.
+          HEAD_REF: ${{ steps.parse.outputs.branch }}
+          BASE: ${{ steps.parse.outputs.base }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
         run: |
-          head="${{ steps.parse.outputs.branch }}"
+          head="${HEAD_REF}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
 
           # Check if PR already exists
           # The open pull request of the branch. A failed read fails the step (bash -e): reading
           # an error (a missing token permission, a rate limit) as "no PR" re-ran the job on its
           # own push and pushed again, without end.
-          pr_url=$(gh pr list --repo "${{ github.repository }}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
+          pr_url=$(gh pr list --repo "${REPOSITORY}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
           if [[ -n "${pr_url}" ]]; then
             echo "Open pull request: ${pr_url}"
             echo "skip=true" >> $GITHUB_OUTPUT
@@ -182,15 +188,15 @@ jobs:
           # Both lookups fail the step on an error, as above: reading an error as "not ahead" or
           # "no trailer" lets the job run on its own push again. Release branches carry "#"
           # (main#release#patch), which ends the URL path unless it is encoded.
-          base="${{ steps.parse.outputs.base }}"
+          base="${BASE}"
           # A release branch with a single "#" (release#minor-rc) takes its base from the push
           # event, which a branch creation leaves empty: no base, nothing to compare against.
           ahead_by=0
           if [[ -n "${base}" ]]; then
-            ahead_by=$(gh api "repos/${{ github.repository }}/compare/${base//#/%23}...${branch//#/%23}" --jq '.ahead_by')
+            ahead_by=$(gh api "repos/${REPOSITORY}/compare/${base//#/%23}...${branch//#/%23}" --jq '.ahead_by')
           fi
           if [[ "$ahead_by" -gt "0" ]]; then
-            commit_message=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}" --jq '.commit.message')
+            commit_message=$(gh api "repos/${REPOSITORY}/commits/${SHA}" --jq '.commit.message')
             if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
               echo "Triggering commit was created by release workflow, skipping"
               echo "skip=true" >> $GITHUB_OUTPUT
@@ -254,12 +260,13 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "chore(release): v${{ env.version }} - version packages" -m "Release-Workflow-Run: ${{ github.run_id }}"
+          git commit -m "chore(release): v${version} - version packages" -m "Release-Workflow-Run: ${GITHUB_RUN_ID}"
       - name: Push changes
         env:
           remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          BRANCH: ${{ needs.gather_facts.outputs.branch }}
         run: |
-          git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
+          git push "${remote_repo}" "HEAD:${BRANCH}"
 
   create_release_pr:
     name: Create release PR
@@ -274,8 +281,6 @@ jobs:
     # A status function in `if` replaces the implicit success(), which would skip
     # this job whenever prepare_release_pr is skipped, so do not use success() here.
     if: ${{ !cancelled() && !failure() && needs.gather_facts.result == 'success' && needs.gather_facts.outputs.skip != 'true' }}
-    env:
-      architect_flags: "--organisation ${{ github.repository_owner }} --project ${{ needs.gather_facts.outputs.repo_name }}"
     steps:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -293,12 +298,19 @@ jobs:
           ref: ${{ needs.gather_facts.outputs.branch }}
           persist-credentials: false
       - name: Prepare release changes
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ needs.gather_facts.outputs.repo_name }}
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
-          architect prepare-release ${{ env.architect_flags }} --version "${{ needs.gather_facts.outputs.version }}"
+          architect prepare-release --organisation "${OWNER}" --project "${REPO_NAME}" --version "${VERSION}"
       - name: Update version field in Chart.yaml
+        env:
+          REPO_NAME: ${{ needs.gather_facts.outputs.repo_name }}
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
           # Define chart_dir
-          repository="${{ needs.gather_facts.outputs.repo_name }}"
+          repository="${REPO_NAME}"
           chart="helm/${repository}"
 
           # Check chart directory.
@@ -333,21 +345,23 @@ jobs:
           then
             # check if version in Chart.yaml is templated using architect
             if [ $(grep -c "^version:.*\.Version.*$" "${chart_yaml}") = "0" ]; then
-              yq -i '.version = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+              yq -i '.version = strenv(VERSION)' "${chart_yaml}"
             fi
 
             # Check if ABS is configured for the project.
             if [ -f ".abs/main.yaml" ]; then
               # Check if replace-app-version-with-git is enabled in ABS config.
               if [ "$(yq '.replace-app-version-with-git' '.abs/main.yaml')" = "true" ]; then
-                yq -i '.appVersion = "${{ needs.gather_facts.outputs.version }}"' "${chart_yaml}"
+                yq -i '.appVersion = strenv(VERSION)' "${chart_yaml}"
               fi
             fi
           fi
 
       - name: Bump go module defined in go.mod if needed
+        env:
+          NEEDS_MAJOR_BUMP: ${{ needs.gather_facts.outputs.needs_major_bump }}
         run: |
-          if [ "${{ needs.gather_facts.outputs.needs_major_bump }}" = true ] && test -f "go.mod"; then
+          if [ "${NEEDS_MAJOR_BUMP}" = true ] && test -f "go.mod"; then
             go install github.com/marwan-at-work/mod/cmd/mod@v0.9.0
             mod upgrade
           fi
@@ -382,12 +396,13 @@ jobs:
           version: "${{ needs.gather_facts.outputs.version }}"
         run: |
           git add -A
-          git commit -m "chore(release): v${{ env.version }}" -m "Release-Workflow-Run: ${{ github.run_id }}"
+          git commit -m "chore(release): v${version}" -m "Release-Workflow-Run: ${GITHUB_RUN_ID}"
       - name: Push changes
         env:
           remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          BRANCH: ${{ needs.gather_facts.outputs.branch }}
         run: |
-          git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
+          git push "${remote_repo}" "HEAD:${BRANCH}"
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"

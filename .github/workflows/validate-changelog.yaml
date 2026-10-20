@@ -100,8 +100,10 @@ jobs:
           echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Validate changelog content
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
         run: |
-          version="${{ steps.extract_version.outputs.version }}"
+          version="${VERSION}"
           changelog_file="CHANGELOG.md"
 
           echo "Validating changelog content for version $version..."
@@ -172,9 +174,11 @@ jobs:
       - name: Add PR comment if validation fails
         if: failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # 9.0.0
+        env:
+          VERSION: ${{ steps.extract_version.outputs.version }}
         with:
           script: |
-            const version = '${{ steps.extract_version.outputs.version }}';
+            const version = process.env.VERSION;
             const body = `## 📝 Changelog Validation Failed
 
             The changelog for version **${version}** is either empty or contains H3 sections that are not part of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).

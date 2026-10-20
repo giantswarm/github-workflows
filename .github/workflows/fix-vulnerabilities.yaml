@@ -43,9 +43,14 @@ jobs:
           ref: ${{ inputs.branch || github.ref }}
       - name: Gather facts
         id: gather_facts
+        # Refs come in through env, never as ${{ }} in the script: a ref name may contain
+        # $, ( and backticks, which the shell would run.
+        env:
+          HEAD_REF: ${{ inputs.branch || github.ref }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          head="${{ inputs.branch || github.ref }}"
-          branch="${{ github.ref_name }}"
+          head="${HEAD_REF}"
+          branch="${REF_NAME}"
 
           echo "branch=${branch}" >> $GITHUB_OUTPUT
 
