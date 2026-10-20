@@ -275,7 +275,7 @@ jobs:
         run: |
           id="helm-schema-$(basename "${CHART_DIR}")"
           if [[ -f .pre-commit-config.yaml ]] &&
-             [[ -n "$(yq -r ".repos[].hooks[] | select(.id == \"${id}\") | .id" .pre-commit-config.yaml)" ]]; then
+             [[ -n "$(HOOK_ID="${id}" yq -r '.repos[].hooks[] | select(.id == strenv(HOOK_ID)) | .id' .pre-commit-config.yaml)" ]]; then
             echo "id=${id}" >> "$GITHUB_OUTPUT"
           fi
       - name: Run schema-gen
@@ -294,7 +294,7 @@ jobs:
           GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
-          select=".repos[].hooks[] | select(.id == \"${HOOK_ID}\")"
+          select='.repos[].hooks[] | select(.id == strenv(HOOK_ID))'
           while IFS= read -r dep; do
             go install "${dep}"
           done < <(yq -r "${select} | .additional_dependencies[]" .pre-commit-config.yaml)
@@ -305,8 +305,10 @@ jobs:
             echo "::error::${HOOK_ID} no longer ends in its 'if ! diff -u' check; update this step to the hook's current shape"
             exit 1
           fi
-          sh -c "${build}
-          cp \"\$tmp\" '${CHART_DIR}/values.schema.json'"
+          # The chart dir comes in through the environment, not spliced into the script, under a
+          # name the hook script does not set.
+          SCHEMA_SYNC_CHART_DIR="${CHART_DIR}" sh -c "${build}
+          cp \"\$tmp\" \"\${SCHEMA_SYNC_CHART_DIR}/values.schema.json\""
       - name: Detect dependency version changes
         id: detect
         env:

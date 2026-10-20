@@ -165,7 +165,6 @@ jobs:
           HEAD_REF: ${{ steps.parse.outputs.branch }}
           BASE: ${{ steps.parse.outputs.base }}
           REPOSITORY: ${{ github.repository }}
-          SHA: ${{ github.sha }}
         run: |
           head="${HEAD_REF}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
@@ -196,7 +195,7 @@ jobs:
             ahead_by=$(gh api "repos/${REPOSITORY}/compare/${base//#/%23}...${branch//#/%23}" --jq '.ahead_by')
           fi
           if [[ "$ahead_by" -gt "0" ]]; then
-            commit_message=$(gh api "repos/${REPOSITORY}/commits/${SHA}" --jq '.commit.message')
+            commit_message=$(gh api "repos/${REPOSITORY}/commits/${GITHUB_SHA}" --jq '.commit.message')
             if [[ "$commit_message" == *"Release-Workflow-Run:"* ]]; then
               echo "Triggering commit was created by release workflow, skipping"
               echo "skip=true" >> $GITHUB_OUTPUT
