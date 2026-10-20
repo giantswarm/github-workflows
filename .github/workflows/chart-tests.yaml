@@ -14,6 +14,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # gitsemver resolves the version from the tags in the history.
+          fetch-depth: 0
           persist-credentials: false
 
       # The generated Makefile.gen.go.mk derives VERSION from `gitsemver get` and
