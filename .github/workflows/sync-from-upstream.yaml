@@ -525,8 +525,11 @@ jobs:
             # --autostash: without .pre-commit-config.yaml only the files above
             # are committed, and a tool may have left another one modified.
             if ! git rebase --autostash "${tip}"; then
-              git rebase --abort || true
               echo "::error::the sync commits do not rebase cleanly onto ${UPDATE_BRANCH} at ${tip}"
+              # A rebase that refused to start leaves nothing to abort.
+              if [[ -d "$(git rev-parse --git-path rebase-merge)" || -d "$(git rev-parse --git-path rebase-apply)" ]]; then
+                git rebase --abort
+              fi
               exit 1
             fi
             base="${tip}"
