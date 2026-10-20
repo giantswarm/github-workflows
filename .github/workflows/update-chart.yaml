@@ -20,7 +20,10 @@ on:
           and only skip opening the PR. sync-from-upstream sets it: it rebuilds
           the update branch from the Renovate branch on every push, so the Giant
           Swarm delta has to be re-applied every time. A push-triggered caller
-          leaves it off, since its own pushes to the branch trigger it again.
+          leaves it off, so once the PR is open a later push to the branch (by
+          hand, or sync-from-upstream's) does not run the update again. Its run
+          on this workflow's own update commit is skipped by the commit's
+          Update-Chart-Workflow-Run trailer instead (see gather_facts).
         default: false
         required: false
         type: boolean
@@ -53,7 +56,7 @@ jobs:
       repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
-      skip: ${{ steps.pr_exists.outputs.skip }}
+      skip: ${{ steps.own_commit.outputs.skip == 'true' || steps.pr_exists.outputs.skip == 'true' }}
       pr_exists: ${{ steps.pr_exists.outputs.pr_exists }}
       use_app: ${{ steps.credentials.outputs.use_app }}
     steps:
@@ -97,9 +100,55 @@ jobs:
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
           echo "head=${head}" >> $GITHUB_OUTPUT
+      - name: Check for own update commit
+        id: own_commit
+        env:
+          BRANCH: ${{ steps.gather_facts.outputs.branch }}
+          DELETED: ${{ github.event.deleted }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          HAS_HEAD_COMMIT: ${{ github.event.head_commit != null }}
+          HEAD_COMMIT_DISTINCT: ${{ github.event.head_commit.distinct }}
+          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # A push of this workflow's own update commit (sync-from-upstream's call pushes it
+          # before it opens the PR) must not run `make update-chart` again: the second run
+          # pushes a commit that only changes the Chart.lock timestamp and races
+          # sync-and-update's push. Only a push to the branch being updated is checked;
+          # sync-from-upstream's own call runs on a push to the Renovate branch or a dispatch.
+          # The skip does not look for an open PR: if the call that pushed the commit failed
+          # to open it, rerun that call or dispatch sync-from-upstream.
+          branch="refs/heads/${BRANCH#refs/heads/}"
+          if [[ "${EVENT_NAME}" != "push" || "${branch}" != "${EVENT_REF}" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${DELETED}" == "true" ]]; then
+            echo "The branch was deleted, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The head commit comes from the push payload. A push without one fails the step,
+          # it is never read as "no trailer".
+          if [[ "${HAS_HEAD_COMMIT}" != "true" ]]; then
+            echo "::error::The push event carries no head commit"
+            exit 1
+          fi
+          # Only a commit new to the repository counts. A squash- or rebase-merged update PR
+          # leaves the trailer on main's tip, and pushing main to the branch to start a new
+          # update pushes that commit again, not distinct.
+          trailers=$(git interpret-trailers --parse <<< "${HEAD_COMMIT_MESSAGE}")
+          if [[ "${HEAD_COMMIT_DISTINCT}" == "true" ]] && grep -q '^Update-Chart-Workflow-Run: ' <<< "${trailers}"; then
+            echo "Head commit ${SHA} is this workflow's own update commit, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Generate release token
         id: release_token
-        if: ${{ steps.credentials.outputs.use_app == 'true' }}
+        if: ${{ steps.credentials.outputs.use_app == 'true' && steps.own_commit.outputs.skip != 'true' }}
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           client-id: ${{ secrets.RELEASE_BOT_CLIENT_ID }}
@@ -110,6 +159,7 @@ jobs:
           permission-pull-requests: read
       - name: Check if PR exists
         id: pr_exists
+        if: ${{ steps.own_commit.outputs.skip != 'true' }}
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           UPDATE_EXISTING: ${{ inputs.update_existing }}
@@ -223,13 +273,16 @@ jobs:
           fi
       - name: Create update commit
         id: commit
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
           git add -A
           if git diff --cached --quiet; then
             echo "make update-chart changed nothing; nothing to push"
             echo "committed=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "chore(chart): automated update from upstream"
+            # gather_facts skips a push whose head commit carries this trailer.
+            git commit -m "chore(chart): automated update from upstream" -m "Update-Chart-Workflow-Run: ${RUN_ID}"
             echo "committed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Push changes
