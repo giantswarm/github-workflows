@@ -161,11 +161,15 @@ jobs:
         env:
           branch: "${{ github.ref }}-version-bump"
           IS_RC: "${{ needs.gather_facts.outputs.is_rc }}"
+          # Refs and job outputs come in through env, never as ${{ }} in the script: a ref
+          # name may contain $, ( and backticks, which the shell would run.
+          PROJECT_GO_PATH: ${{ needs.gather_facts.outputs.project_go_path }}
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
           set -euo pipefail
-          git checkout -b ${{ env.branch }}
-          file="${{ needs.gather_facts.outputs.project_go_path }}"
-          version="${{ needs.gather_facts.outputs.version }}"
+          git checkout -b "${branch}"
+          file="${PROJECT_GO_PATH}"
+          version="${VERSION}"
           if [[ "${IS_RC}" == "true" ]]; then
             # An RC like 1.3.0-rc.1 returns project.go to the dev string for the
             # stable it is leading toward (1.3.0-dev). This way successive RCs
@@ -177,8 +181,8 @@ jobs:
           fi
           echo "version=\"$version\" new_version=\"$new_version\""
           echo "new_version=${new_version}" >> $GITHUB_OUTPUT
-          sed -Ei "s/(version[[:space:]]*=[[:space:]]*)\"${version}\"/\1\"${new_version}\"/" $file
-          if git diff --exit-code $file ; then
+          sed -Ei "s/(version[[:space:]]*=[[:space:]]*)\"${version}\"/\1\"${new_version}\"/" "$file"
+          if git diff --exit-code "$file" ; then
             echo "error: no changes in \"$file\"" >&2
             exit 1
           fi
@@ -208,10 +212,13 @@ jobs:
             git config --local user.name "taylorbot"
           fi
       - name: Commit changes
+        env:
+          PROJECT_GO_PATH: ${{ needs.gather_facts.outputs.project_go_path }}
+          NEW_VERSION: ${{ steps.update_project_go.outputs.new_version }}
         run: |
-          file="${{ needs.gather_facts.outputs.project_go_path }}"
-          git add $file
-          git commit -m "chore: bump version to ${{ steps.update_project_go.outputs.new_version }}"
+          file="${PROJECT_GO_PATH}"
+          git add "$file"
+          git commit -m "chore: bump version to ${NEW_VERSION}"
       - name: Push changes
         env:
           REMOTE_REPO:
@@ -219,7 +226,7 @@ jobs:
             github.repository }}.git"
           branch: "${{ github.ref }}-version-bump"
         run: |
-          git push "${REMOTE_REPO}" HEAD:${{ env.branch }}
+          git push "${REMOTE_REPO}" "HEAD:${branch}"
       - name: Create PR
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
@@ -227,9 +234,10 @@ jobs:
           branch: "${{ github.ref }}-version-bump"
           version: "${{ needs.gather_facts.outputs.version }}"
           title: "chore: bump version to ${{ steps.update_project_go.outputs.new_version }}"
+          ACTOR: ${{ github.actor }}
         run: |
-          gh pr create --title "${{ env.title }}" --body "" \
-            --base ${{ env.base }} --head ${{ env.branch }} --reviewer ${{ github.actor }}
+          gh pr create --title "${title}" --body "" \
+            --base "${base}" --head "${branch}" --reviewer "${ACTOR}"
       - name: Enable auto-merge for PR
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
@@ -259,10 +267,13 @@ jobs:
           persist-credentials: false
       - name: Ensure correct version in project.go
         if: ${{ needs.gather_facts.outputs.project_go_path != '' }}
+        env:
+          PROJECT_GO_PATH: ${{ needs.gather_facts.outputs.project_go_path }}
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
-          file="${{ needs.gather_facts.outputs.project_go_path }}"
-          version="${{ needs.gather_facts.outputs.version }}"
-          grep -qE "version[[:space:]]*=[[:space:]]*\"$version\"" $file
+          file="${PROJECT_GO_PATH}"
+          version="${VERSION}"
+          grep -qE "version[[:space:]]*=[[:space:]]*\"$version\"" "$file"
       - name: Get Changelog Entry
         id: changelog_reader
         env:
@@ -321,9 +332,11 @@ jobs:
             git config --local user.name "taylorbot"
           fi
       - name: Create tag
+        env:
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
-          version="${{ needs.gather_facts.outputs.version }}"
-          git tag "v$version" ${{ github.sha }}
+          version="${VERSION}"
+          git tag "v$version" "${GITHUB_SHA}"
       - name: Push tag
         env:
           REMOTE_REPO:
@@ -372,9 +385,10 @@ jobs:
           REMOTE_REPO:
             "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{
             github.repository }}.git"
+          VERSION: ${{ needs.gather_facts.outputs.version }}
         run: |
           set -euo pipefail
-          current_version="${{ needs.gather_facts.outputs.version }}"
+          current_version="${VERSION}"
           parent_version="$(git describe --tags --abbrev=0 HEAD^ || true)"
           parent_version="${parent_version#v}" # Strip "v" prefix.
 
@@ -472,17 +486,21 @@ jobs:
           # is falsy, so `cond && 0 || 1` always evaluates to `1`.
           fetch-depth: ${{ inputs.fetch-deep-gitlog-for-build && '0' || '1' }}
       - name: Create ${{ matrix.platform }} package
+        # The matrix is a literal list, and a PLATFORM env var would reach make as a variable.
         run: make package-${{ matrix.platform }}
       - name: Specify package file name based on platform
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
-          if [[  "${{ matrix.platform }}" == "windows-amd64" ]]; then
-            echo "FILE_NAME=${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}.zip" >> $GITHUB_ENV
+          if [[  "${PLATFORM}" == "windows-amd64" ]]; then
+            echo "FILE_NAME=${REPO_NAME}-${TAG}-${PLATFORM}.zip" >> $GITHUB_ENV
           else
-            echo "FILE_NAME=${{ github.event.repository.name }}-${{ env.TAG }}-${{ matrix.platform }}.tar.gz" >> $GITHUB_ENV
+            echo "FILE_NAME=${REPO_NAME}-${TAG}-${PLATFORM}.tar.gz" >> $GITHUB_ENV
           fi
       - name: Add ${{ matrix.platform }} package to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload ${{ env.TAG }} \
-          ${{ env.ARTIFACT_DIR }}/${{ env.FILE_NAME }}#${{ env.FILE_NAME }}
+          gh release upload "${TAG}" \
+          "${ARTIFACT_DIR}/${FILE_NAME}#${FILE_NAME}"

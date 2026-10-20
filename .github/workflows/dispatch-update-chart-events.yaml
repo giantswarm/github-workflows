@@ -79,6 +79,8 @@ jobs:
         id: wait-status
         env:
           GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW: ${{ github.workflow }}
         run: |
           PASS_STRING="success"
           FAIL_STRING="failure"
@@ -92,15 +94,17 @@ jobs:
           elapsed=0
           while [ $elapsed -lt $TIMEOUT ]; do
             # GitHub Actions workflow runs (excluding this workflow)
-            gha_runs=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${{ github.sha }}&per_page=100" \
-              --jq '[.workflow_runs[] | select(.name != "${{ github.workflow }}")]')
+            # $ENV.WORKFLOW is jq, not shell: the workflow name stays out of the jq program.
+            # shellcheck disable=SC2016
+            gha_runs=$(gh api "repos/${REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=100" \
+              --jq '[.workflow_runs[] | select(.name != $ENV.WORKFLOW)]')
 
             gha_failed=$(echo "$gha_runs" | jq '[.[] | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")] | length')
             gha_total=$(echo "$gha_runs" | jq 'length')
             gha_in_progress=$(echo "$gha_runs" | jq '[.[] | select(.status != "completed")] | length')
 
             # Combined commit status (e.g. CircleCI) — single aggregated state
-            commit_status=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/status")
+            commit_status=$(gh api "repos/${REPOSITORY}/commits/${GITHUB_SHA}/status")
             commit_state=$(echo "$commit_status" | jq -r '.state')
             commit_total=$(echo "$commit_status" | jq '.statuses | length')
 

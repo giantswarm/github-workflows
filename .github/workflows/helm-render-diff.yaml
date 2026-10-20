@@ -63,6 +63,8 @@ jobs:
       - run: which dyff
       - run: ls -la /opt/hostedtoolcache
       - name: render helm with current code
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
           helm repo add cluster-catalog https://giantswarm.github.io/cluster-catalog/
 
@@ -70,7 +72,6 @@ jobs:
           # Charts from cluster-test-catalog should be used only for testing purposes.
           helm repo add cluster-test-catalog https://giantswarm.github.io/cluster-test-catalog/
 
-          REPO_NAME="${{ github.event.repository.name }}"
           helm dependency build "helm/${REPO_NAME}"
 
           for test_file_path in helm/${REPO_NAME}/ci/test-*-values.yaml; do
@@ -89,8 +90,9 @@ jobs:
           ref: "${{ github.event.repository.default_branch }}"
           path: 'old'
       - name: render helm with main branch code
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
         run: |
-          REPO_NAME="${{ github.event.repository.name }}"
           helm dependency build "old/helm/${REPO_NAME}"
 
           for test_file_path in helm/${REPO_NAME}/ci/test-*-values.yaml; do
@@ -109,10 +111,11 @@ jobs:
           done
       - name: get the diffs
         uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0  # v2.0.0
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
         with:
           run: |
             marker="=== No differences at all ==="
-            REPO_NAME="${{ github.event.repository.name }}"
             (
             found_differences=
             first=1

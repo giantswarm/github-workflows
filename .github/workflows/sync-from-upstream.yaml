@@ -223,20 +223,22 @@ jobs:
       - name: Detect upstream values drift
         id: values_drift
         if: steps.chart.outputs.has_dependencies == 'true'
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           config_args=()
           if [[ -f "values-sync-ignore.yaml" ]]; then
             config_args+=(--config /github/workspace/values-sync-ignore.yaml)
           fi
           drift=$(docker run --rm \
-            -v ${{ github.workspace }}:/github/workspace \
+            -v "${GITHUB_WORKSPACE}:/github/workspace" \
             -e GIT_CONFIG_COUNT=1 \
             -e GIT_CONFIG_KEY_0=safe.directory \
             -e GIT_CONFIG_VALUE_0=/github/workspace \
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.6 \
             --show-git-diff \
             --diff-base origin/main \
-            --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
+            --chart-dir "/github/workspace/${CHART_DIR}" \
             "${config_args[@]}" || true)
           echo "${drift}"
           if [[ -n "${drift}" ]]; then
@@ -249,15 +251,17 @@ jobs:
           fi
       - name: Run values-sync
         if: steps.chart.outputs.has_dependencies == 'true'
+        env:
+          CHART_DIR: ${{ steps.chart.outputs.chart_dir }}
         run: |
           config_args=()
           if [[ -f "values-sync-ignore.yaml" ]]; then
             config_args+=(--config /github/workspace/values-sync-ignore.yaml)
           fi
           docker run --rm \
-            -v ${{ github.workspace }}:/github/workspace \
+            -v "${GITHUB_WORKSPACE}:/github/workspace" \
             gsoci.azurecr.io/giantswarm/shield-values-sync:0.0.6 \
-            --chart-dir /github/workspace/${{ steps.chart.outputs.chart_dir }} \
+            --chart-dir "/github/workspace/${CHART_DIR}" \
             "${config_args[@]}"
       # A chart whose .pre-commit-config.yaml carries devctl's helm-schema-<chart>
       # hook builds values.schema.json with another pipeline than schema-gen
@@ -271,7 +275,7 @@ jobs:
         run: |
           id="helm-schema-$(basename "${CHART_DIR}")"
           if [[ -f .pre-commit-config.yaml ]] &&
-             [[ -n "$(yq -r ".repos[].hooks[] | select(.id == \"${id}\") | .id" .pre-commit-config.yaml)" ]]; then
+             [[ -n "$(HOOK_ID="${id}" yq -r '.repos[].hooks[] | select(.id == strenv(HOOK_ID)) | .id' .pre-commit-config.yaml)" ]]; then
             echo "id=${id}" >> "$GITHUB_OUTPUT"
           fi
       - name: Run schema-gen
@@ -290,7 +294,7 @@ jobs:
           GOTOOLCHAIN: auto
         run: |
           set -euo pipefail
-          select=".repos[].hooks[] | select(.id == \"${HOOK_ID}\")"
+          select='.repos[].hooks[] | select(.id == strenv(HOOK_ID))'
           while IFS= read -r dep; do
             go install "${dep}"
           done < <(yq -r "${select} | .additional_dependencies[]" .pre-commit-config.yaml)
@@ -301,8 +305,10 @@ jobs:
             echo "::error::${HOOK_ID} no longer ends in its 'if ! diff -u' check; update this step to the hook's current shape"
             exit 1
           fi
-          sh -c "${build}
-          cp \"\$tmp\" '${CHART_DIR}/values.schema.json'"
+          # The chart dir comes in through the environment, not spliced into the script, under a
+          # name the hook script does not set.
+          SCHEMA_SYNC_CHART_DIR="${CHART_DIR}" sh -c "${build}
+          cp \"\$tmp\" \"\${SCHEMA_SYNC_CHART_DIR}/values.schema.json\""
       - name: Detect dependency version changes
         id: detect
         env:
@@ -414,10 +420,12 @@ jobs:
           fi
       - name: Run changelogger
         id: changelogger
+        env:
+          ENTRIES_FILE: ${{ steps.detect.outputs.entries_file }}
         run: |
           set -euo pipefail
 
-          entries_file="${{ steps.detect.outputs.entries_file }}"
+          entries_file="${ENTRIES_FILE}"
           args=()
           entries=""
           while IFS= read -r entry; do
@@ -427,7 +435,7 @@ jobs:
 
           if [[ ${#args[@]} -gt 0 ]]; then
             docker run --rm \
-              -v ${{ github.workspace }}:/workspace \
+              -v "${GITHUB_WORKSPACE}:/workspace" \
               gsoci.azurecr.io/giantswarm/shield-changelogger:0.0.6 \
               --changelog-path /workspace/CHANGELOG.md \
               "${args[@]}"
@@ -567,6 +575,8 @@ jobs:
           ENTRIES: ${{ needs.sync-and-update.outputs.entries }}
           DRIFT: ${{ needs.sync-and-update.outputs.drift }}
           TITLE: ${{ needs.sync-and-update.outputs.title }}
+          UPDATE_BRANCH: ${{ inputs.update_branch }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           body=""
           if [[ -n "${ENTRIES}" ]]; then
@@ -596,7 +606,7 @@ jobs:
           if [[ -n "${TITLE}" ]]; then
             title_args=(--title "${TITLE}")
           fi
-          gh pr edit '${{ inputs.update_branch }}' \
-            --repo ${{ github.repository }} \
+          gh pr edit "${UPDATE_BRANCH}" \
+            --repo "${REPOSITORY}" \
             "${title_args[@]}" \
             --body "${body}"
