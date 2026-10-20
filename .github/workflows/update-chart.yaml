@@ -53,7 +53,7 @@ jobs:
       repo_name: ${{ steps.gather_facts.outputs.repo_name }}
       branch: ${{ steps.gather_facts.outputs.branch }}
       base: ${{ steps.gather_facts.outputs.base }}
-      skip: ${{ steps.pr_exists.outputs.skip }}
+      skip: ${{ steps.own_commit.outputs.skip == 'true' || steps.pr_exists.outputs.skip == 'true' }}
       pr_exists: ${{ steps.pr_exists.outputs.pr_exists }}
       use_app: ${{ steps.credentials.outputs.use_app }}
     steps:
@@ -108,8 +108,39 @@ jobs:
           # (repository.defaultBranchRef) and the open-PR check below ran blind.
           permission-contents: read
           permission-pull-requests: read
+      - name: Check for own update commit
+        id: own_commit
+        env:
+          GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
+          BRANCH: ${{ steps.gather_facts.outputs.branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          REPOSITORY: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # A push of this workflow's own update commit (sync-from-upstream's call pushes it
+          # before it opens the PR) must not run `make update-chart` again: the second run
+          # pushes a commit that only changes the Chart.lock timestamp and races the caller's
+          # next push. Only a push to the branch being updated is checked; a dispatched run,
+          # or sync-from-upstream's push to the Renovate branch, carries some other commit.
+          branch="refs/heads/${BRANCH#refs/heads/}"
+          if [[ "${EVENT_NAME}" != "push" || "${branch}" != "${EVENT_REF}" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # A failed read fails the step (bash -e), it is never read as "no trailer".
+          message=$(gh api "repos/${REPOSITORY}/commits/${SHA}" --jq '.commit.message')
+          trailers=$(git interpret-trailers --parse <<< "${message}")
+          if grep -q '^Update-Chart-Workflow-Run: ' <<< "${trailers}"; then
+            echo "Head commit ${SHA} is this workflow's own update commit, skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Check if PR exists
         id: pr_exists
+        if: ${{ steps.own_commit.outputs.skip != 'true' }}
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           UPDATE_EXISTING: ${{ inputs.update_existing }}
@@ -223,13 +254,16 @@ jobs:
           fi
       - name: Create update commit
         id: commit
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
           git add -A
           if git diff --cached --quiet; then
             echo "make update-chart changed nothing; nothing to push"
             echo "committed=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "chore(chart): automated update from upstream"
+            # gather_facts skips a push whose head commit carries this trailer.
+            git commit -m "chore(chart): automated update from upstream" -m "Update-Chart-Workflow-Run: ${RUN_ID}"
             echo "committed=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Push changes
