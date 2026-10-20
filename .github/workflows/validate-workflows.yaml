@@ -97,7 +97,7 @@ jobs:
           actionlint -color -ignore 'SC2[0-9]{3}:' .github/workflows/*.yaml
 
   analyze-actions:
-    name: Analyze workflows with zizmor (report-only)
+    name: Analyze workflows with zizmor
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -109,10 +109,26 @@ jobs:
         with:
           persist-credentials: false
 
-      # Report-only: zizmor uploads findings to the Security tab for visibility but never
-      # blocks PRs. The repo carries pre-existing findings that are tracked separately; this
-      # scan is here to surface regressions (e.g. re-introducing `${{ toJson(github) }}` in a
-      # `run:` block) that CodeQL did not catch. See giantswarm/giantswarm#36940.
+      # Blocking: no `${{ }}` expression may sit inside a `run:` script, which is how a PR
+      # title or branch name becomes shell. Pass the value through `env:` instead. zizmor has
+      # no rule selector, so the findings are filtered on the rule id; every other audit
+      # stays report-only below.
+      - name: Block on template-injection findings
+        run: |
+          # --no-exit-codes: a non-zero exit then means zizmor itself broke, not that it found something
+          docker run --rm -v "$PWD:/data" -w /data \
+            ghcr.io/zizmorcore/zizmor:1.31.0@sha256:5a91180aefd2c72e585a155ee15938ecc2911b64e7fade998bf79fbd16a07856 \
+            --persona regular --no-online-audits --no-exit-codes --format json .github/workflows > "$RUNNER_TEMP/zizmor.json"
+          findings=$(jq -r '.[] | select(.ident == "template-injection") | "\(.locations[0].symbolic.key.Local.verbatim_path):\(.locations[0].concrete.location.start_point.row + 1): \(.desc)"' "$RUNNER_TEMP/zizmor.json")
+          if [ -n "$findings" ]; then
+            echo "::error::template-injection: pass expression values to run scripts through env instead of interpolating them"
+            echo "$findings"
+            exit 1
+          fi
+
+      # Report-only: zizmor uploads every other finding to the Security tab for visibility
+      # but never blocks PRs. The repo carries pre-existing findings that are tracked
+      # separately. See giantswarm/giantswarm#36940.
       - name: Run zizmor (non-blocking)
         continue-on-error: true
         uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
