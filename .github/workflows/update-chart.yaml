@@ -82,20 +82,26 @@ jobs:
           fi
       - name: Gather facts
         id: gather_facts
+        # Refs come in through env, never as ${{ }} in the script: a ref name may contain
+        # $, ( and backticks, which the shell would run.
+        env:
+          HEAD_REF: ${{ inputs.branch || github.event.ref }}
+          BASE_REF: ${{ github.event.base_ref }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          head="${{ inputs.branch || github.event.ref }}"
+          head="${HEAD_REF}"
           echo "branch=${head}" >> $GITHUB_OUTPUT
 
           head="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           if [[ $(echo "$head" | grep -o '#' | wc -l) -ge 1 ]]; then
-            base="$(echo $head | cut -d '#' -f 1)"
+            base="$(echo "$head" | cut -d '#' -f 1)"
           else
-            base="${{ github.event.base_ref }}"
+            base="${BASE_REF}"
           fi
 
           base="${base#refs/heads/}" # Strip "refs/heads/" prefix.
 
-          repo_name="$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
+          repo_name="$(echo "${REPOSITORY}" | awk -F '/' '{print $2}')"
           echo "repo_name=\"$repo_name\" base=\"$base\" head=\"$head\""
           echo "repo_name=${repo_name}" >> $GITHUB_OUTPUT
           echo "base=${base}" >> $GITHUB_OUTPUT
@@ -163,13 +169,15 @@ jobs:
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           UPDATE_EXISTING: ${{ inputs.update_existing }}
+          BRANCH: ${{ steps.gather_facts.outputs.branch }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          head="${{ steps.gather_facts.outputs.branch }}"
+          head="${BRANCH}"
           branch="${head#refs/heads/}" # Strip "refs/heads/" prefix.
           # The open pull request of the branch. A failed read fails the step (bash -e): reading
           # an error (a missing token permission, a rate limit) as "no PR" re-ran the job on its
           # own push and pushed again, without end.
-          pr_url=$(gh pr list --repo "${{ github.repository }}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
+          pr_url=$(gh pr list --repo "${REPOSITORY}" --head "${branch}" --state open --json url --jq '.[0].url // ""')
           if [[ -n "${pr_url}" ]]; then
             echo "Open pull request: ${pr_url}"
             echo "pr_exists=true" >> "$GITHUB_OUTPUT"
@@ -208,10 +216,11 @@ jobs:
       - name: Run update
         env:
           CHART_DIR_INPUT: ${{ inputs.chart_dir }}
+          REPO_NAME: ${{ needs.gather_facts.outputs.repo_name }}
         run: |
           # Define chart name. The Makefile prepends the "helm/" prefix itself,
           # so APPLICATION must be the bare chart name without it.
-          repository="${{ needs.gather_facts.outputs.repo_name }}"
+          repository="${REPO_NAME}"
           chart="${repository}"
 
           if [ -n "${CHART_DIR_INPUT}" ]
@@ -289,15 +298,17 @@ jobs:
         if: steps.commit.outputs.committed == 'true'
         env:
           remote_repo: "https://x-access-token:${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}@github.com/${{ github.repository }}.git"
+          BRANCH: ${{ needs.gather_facts.outputs.branch }}
         run: |
-          git push "${remote_repo}" HEAD:${{ needs.gather_facts.outputs.branch }}
+          git push "${remote_repo}" "HEAD:${BRANCH}"
       - name: Ensure automated-update label exists
         if: needs.gather_facts.outputs.pr_exists != 'true'
         env:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
+          REPOSITORY: ${{ github.repository }}
         run: |
           gh label create automated-update \
-            --repo "${{ github.repository }}" \
+            --repo "${REPOSITORY}" \
             --color e86d00 \
             --description "Used to identify automated updates from upstream-forks" \
             --force
@@ -307,12 +318,13 @@ jobs:
           GITHUB_TOKEN: "${{ steps.release_token.outputs.token || secrets.TAYLORBOT_GITHUB_ACTION }}"
           base: "${{ needs.gather_facts.outputs.base }}"
           head: "${{ needs.gather_facts.outputs.branch }}"
+          ACTOR: ${{ github.actor }}
         run: |
           gh pr create \
             --title "chore(chart): automated update from upstream" \
             --label "automated-update" \
-            --base "${{ env.base }}" \
-            --head "${{ env.head }}" \
+            --base "${base}" \
+            --head "${head}" \
             --body-file - << EOF
           This PR was created by the \`update-chart\` GitHub Actions workflow.
           - [ ] **:warning: All tests are passing**
@@ -321,4 +333,4 @@ jobs:
           EOF
 
           # Splitting this into two calls to handle errors when renovate triggers it
-          gh pr edit --add-assignee "${{ github.actor }}" || true
+          gh pr edit --add-assignee "${ACTOR}" || true
