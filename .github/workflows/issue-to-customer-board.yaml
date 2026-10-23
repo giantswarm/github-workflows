@@ -10,14 +10,23 @@
 #   add-to-board:
 #     uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
 #     secrets:
-#       ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}
+#       PROJECT_AUTOMATION_CLIENT_ID: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+#       PROJECT_AUTOMATION_PRIVATE_KEY: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+#
+# The issue is added as the giantswarm-project-automation App. A caller that
+# still passes only ISSUE_AUTOMATION (architectbot's token, being removed in
+# giantswarm/giantswarm#38800) keeps working until devctl regenerates it.
 
 name: Add issue to general customer board
 on:
   workflow_call:
     secrets:
+      PROJECT_AUTOMATION_CLIENT_ID:
+        required: false
+      PROJECT_AUTOMATION_PRIVATE_KEY:
+        required: false
       ISSUE_AUTOMATION:
-        required: true
+        required: false
 
 permissions: {}
 
@@ -28,10 +37,22 @@ jobs:
   issue_to_customer_board:
     name: Add issue to general customer board
     runs-on: ubuntu-24.04
+    env:
+      # The secrets context is not available in a step's `if`.
+      HAS_APP: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID != '' }}
     steps:
+      - name: Mint App token for the board
+        id: app-token
+        if: ${{ env.HAS_APP == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+          permission-issues: read
+          permission-organization-projects: write
       - name: Add issue to general customer board
         if: ${{ env.BOARD_URL != 'null' && env.BOARD_URL != '' }}
         uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
         with:
           project-url: ${{ env.BOARD_URL }}
-          github-token: ${{ secrets.ISSUE_AUTOMATION }}
+          github-token: ${{ steps.app-token.outputs.token || secrets.ISSUE_AUTOMATION }}
