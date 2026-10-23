@@ -55,7 +55,7 @@ concurrency:
 
 jobs:
   check-lock:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       locked: ${{ steps.lock.outputs.locked }}
     steps:
@@ -85,7 +85,7 @@ jobs:
           fi
 
   prepare-update-branch:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: check-lock
     if: needs.check-lock.outputs.locked != 'true'
     permissions:
@@ -142,7 +142,7 @@ jobs:
       contents: write
 
   sync-and-update:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: call-update-chart
     outputs:
       entries: ${{ steps.changelogger.outputs.entries }}
@@ -559,7 +559,7 @@ jobs:
           done
 
   update-pr-description:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: sync-and-update
     if: needs.sync-and-update.outputs.entries != '' || needs.sync-and-update.outputs.drift != ''
     steps:
