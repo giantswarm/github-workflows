@@ -25,7 +25,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.1
+          version: v3.0.7
           download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-linux-amd64"
           smoke_test: "${binary} --version"
 
