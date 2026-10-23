@@ -126,7 +126,7 @@ jobs:
       - name: Block on template-injection findings
         env:
           # renovate: datasource=docker depName=ghcr.io/zizmorcore/zizmor
-          ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.31.0@sha256:5a91180aefd2c72e585a155ee15938ecc2911b64e7fade998bf79fbd16a07856
+          ZIZMOR_IMAGE: ghcr.io/zizmorcore/zizmor:1.31.1@sha256:42d409dbb851d4c5d35a058cf042b828bea1e3f2884378c526eb0974780e18d9
         run: |
           # --no-exit-codes: a non-zero exit then means zizmor itself broke, not that it found something.
           # --strict-collection: a workflow zizmor cannot parse fails the step instead of being skipped.
