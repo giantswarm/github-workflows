@@ -53,6 +53,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
         run: |
           set -euo pipefail
 
@@ -61,6 +62,13 @@ jobs:
               "(github.event.pull_request.head.ref is empty)." \
               "Call this workflow from 'on: pull_request: {types: [opened, reopened]}'."
             exit 1
+          fi
+
+          # A caller wired to `synchronize` would start a duplicate pipeline for every
+          # push, on top of the one CircleCI starts itself.
+          if [ "${ACTION}" != "opened" ] && [ "${ACTION}" != "reopened" ]; then
+            echo "::warning::ignoring the '${ACTION}' event: call this workflow on pull_request types [opened, reopened] only."
+            exit 0
           fi
 
           api="https://circleci.com/api/v2/project/gh/${GITHUB_REPOSITORY}/pipeline"
@@ -102,7 +110,7 @@ jobs:
           payload=${resp%$'\n'*}
 
           if [ "${code}" != "201" ]; then
-            echo "::error::triggering a CircleCI pipeline for '${BRANCH}' failed (HTTP ${code}): ${payload}." \
+            echo "::error::triggering a CircleCI pipeline for '${BRANCH}' failed (HTTP ${code}): $(tr '\n' ' ' <<<"${payload}")." \
               "Trigger by hand: ${manual}"
             exit 1
           fi
