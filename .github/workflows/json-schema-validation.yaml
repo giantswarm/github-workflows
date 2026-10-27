@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   validate:
     name: Verify values.schema.json with schemalint
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
@@ -28,7 +28,7 @@ jobs:
           rule-set: 'cluster-app'
   generate:
     name: Check that values.yaml is generated from values.schema.json with helm-values-gen
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     steps:
