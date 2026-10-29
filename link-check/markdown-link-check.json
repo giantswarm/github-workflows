@@ -12,7 +12,8 @@
     { "pattern": "^https://drive\\.google\\.com/" },
     { "pattern": "^https://circleci\\.com/gh/" },
     { "pattern": "^https://dl\\.circleci\\.com/status-badge/" },
-    { "pattern": "^https://img\\.shields\\.io/" }
+    { "pattern": "^https://img\\.shields\\.io/" },
+    { "pattern": "^https://github\\.com/[^/]+/[^/]+/stargazers/?$" }
   ],
   "replacementPatterns": [
     { "pattern": "^/", "replacement": "{{BASEURL}}/" }
