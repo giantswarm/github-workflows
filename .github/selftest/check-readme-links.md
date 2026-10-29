@@ -12,5 +12,7 @@ ignores them (`link-check/markdown-link-check.json`).
   [![CircleCI](https://dl.circleci.com/status-badge/img/gh/giantswarm/check-readme-links-selftest-no-such-project/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/giantswarm/check-readme-links-selftest-no-such-project/tree/main)
 - shields.io badge:
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/giantswarm/github-workflows/blob/main/LICENSE)
+- GitHub stars badge, whose stargazers page answers 404 to anonymous requests:
+  [![GitHub stars](https://img.shields.io/github/stars/giantswarm/github-workflows?style=flat&logo=github)](https://github.com/giantswarm/github-workflows/stargazers)
 
 A relative link that resolves: [the changelog](/CHANGELOG.md).
