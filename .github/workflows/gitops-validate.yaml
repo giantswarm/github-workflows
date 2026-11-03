@@ -27,7 +27,7 @@ on:
         description: "clusterctl release version to install."
       apptestctl_ver:
         type: string
-        default: "0.18.0"
+        default: "0.27.0"
         description: "apptestctl release version to install."
       kind_ver:
         type: string
@@ -240,9 +240,8 @@ jobs:
         uses: giantswarm/install-binary-action@5bef88f65012037dd836117c8d344b21bb559854 # v4.1.0
         with:
           binary: apptestctl
-          download_url: "https://github.com/giantswarm/apptestctl/releases/download/v${version}/apptestctl-v${version}-linux-amd64.tar.gz"
+          download_url: "https://github.com/giantswarm/apptestctl/releases/download/v${version}/apptestctl-linux-amd64"
           smoke_test: "${binary} version"
-          tarball_binary_path: "apptestctl-v${version}-linux-amd64/${binary}"
           version: ${{ inputs.apptestctl_ver }}
       - name: install clusterctl
         env:
