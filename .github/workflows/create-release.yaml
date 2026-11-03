@@ -27,7 +27,7 @@ permissions: {}
 jobs:
   debug_info:
     name: Debug info
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Print github context JSON
         env:
@@ -35,7 +35,7 @@ jobs:
         run: echo "$GITHUB_CONTEXT"
   gather_facts:
     name: Gather facts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -53,7 +53,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.8
+          version: v3.1.0
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
@@ -131,7 +131,7 @@ jobs:
           echo "path=${path}" >> $GITHUB_OUTPUT
   update_project_go:
     name: Update project.go
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     if:
@@ -149,7 +149,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.8
+          version: v3.1.0
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
@@ -251,7 +251,7 @@ jobs:
             || echo "::warning::Could not enable auto-merge on ${head} (see the error above). Check that the repository allows auto-merge, otherwise merge the pull request by hand."
   create_release:
     name: Create release
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     needs:
@@ -358,7 +358,7 @@ jobs:
 
   create-release-branch:
     name: Create release branch
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     needs:
@@ -429,7 +429,7 @@ jobs:
 
   create_and_upload_build_artifacts:
     name: Create and upload build artifacts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     if: ${{ inputs.build-release-artifacts && needs.gather_facts.outputs.version }}
     permissions:
       contents: write
@@ -466,7 +466,7 @@ jobs:
         with:
           binary: "gitsemver"
           # renovate: datasource=github-releases depName=giantswarm/gitsemver
-          version: v3.0.8
+          version: v3.1.0
           # Raw binary, not the legacy `-${version}-linux-amd64.tar.gz`: those tarballs only exist
           # for repos passing `build-release-artifacts: true` below, and gitsemver stopped doing
           # that in giantswarm/gitsemver#260. Extension-less URLs skip unarchiving, so no
@@ -474,7 +474,7 @@ jobs:
           download_url: "https://github.com/giantswarm/${binary}/releases/download/${version}/${binary}-linux-amd64"
           smoke_test: "${binary} --version"
       - name: Set up Go ${{ env.GO_VERSION }}
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Checkout code
