@@ -55,7 +55,7 @@ concurrency:
 
 jobs:
   check-lock:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       locked: ${{ steps.lock.outputs.locked }}
     steps:
@@ -85,7 +85,7 @@ jobs:
           fi
 
   prepare-update-branch:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: check-lock
     if: needs.check-lock.outputs.locked != 'true'
     permissions:
@@ -142,7 +142,7 @@ jobs:
       contents: write
 
   sync-and-update:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: call-update-chart
     outputs:
       entries: ${{ steps.changelogger.outputs.entries }}
@@ -451,7 +451,7 @@ jobs:
           fi
       - name: Set up Python for pre-commit
         if: hashFiles('.pre-commit-config.yaml') != ''
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       # The helm-docs hook shells out to helm-docs. Without it installed here the
       # hook exits 1 without fixing anything, so the chart README stays stale and
       # the consumer's own pre-commit check goes red on the sync PR. Mirrors the
@@ -559,7 +559,7 @@ jobs:
           done
 
   update-pr-description:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: sync-and-update
     if: needs.sync-and-update.outputs.entries != '' || needs.sync-and-update.outputs.drift != ''
     steps:
