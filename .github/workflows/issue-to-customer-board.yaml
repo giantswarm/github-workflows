@@ -10,14 +10,24 @@
 #   add-to-board:
 #     uses: giantswarm/github-workflows/.github/workflows/issue-to-customer-board.yaml@main
 #     secrets:
-#       ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION }}
+#       PROJECT_AUTOMATION_CLIENT_ID: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+#       PROJECT_AUTOMATION_PRIVATE_KEY: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+#
+# The issue is added as the giantswarm-project-automation App. A caller that
+# still passes only ISSUE_AUTOMATION (architectbot's token, being removed in
+# giantswarm/giantswarm#38800) keeps working, with a warning, until that
+# secret is deleted; regenerate it with devctl before then.
 
 name: Add issue to general customer board
 on:
   workflow_call:
     secrets:
+      PROJECT_AUTOMATION_CLIENT_ID:
+        required: false
+      PROJECT_AUTOMATION_PRIVATE_KEY:
+        required: false
       ISSUE_AUTOMATION:
-        required: true
+        required: false
 
 permissions: {}
 
@@ -29,9 +39,38 @@ jobs:
     name: Add issue to general customer board
     runs-on: ubuntu-24.04
     steps:
+      - name: Check board credentials
+        id: credentials
+        env:
+          HAS_CLIENT_ID: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID != '' }}
+          HAS_PRIVATE_KEY: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY != '' }}
+          HAS_ISSUE_AUTOMATION: ${{ secrets.ISSUE_AUTOMATION != '' }}
+        run: |
+          set -euo pipefail
+          if [[ "${HAS_CLIENT_ID}" == "true" && "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "use_app=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${HAS_CLIENT_ID}" == "true" || "${HAS_PRIVATE_KEY}" == "true" ]]; then
+            echo "::error::Only one of PROJECT_AUTOMATION_CLIENT_ID and PROJECT_AUTOMATION_PRIVATE_KEY is passed. Pass both."
+            exit 1
+          elif [[ "${HAS_ISSUE_AUTOMATION}" == "true" ]]; then
+            echo "::warning::No giantswarm-project-automation App secrets passed, using the deprecated ISSUE_AUTOMATION token (giantswarm/giantswarm#38800). Regenerate the workflows with devctl."
+            echo "use_app=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Pass PROJECT_AUTOMATION_CLIENT_ID and PROJECT_AUTOMATION_PRIVATE_KEY (or the deprecated ISSUE_AUTOMATION) to this workflow."
+            exit 1
+          fi
+      - name: Mint App token for the board
+        id: app-token
+        if: ${{ steps.credentials.outputs.use_app == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.PROJECT_AUTOMATION_CLIENT_ID }}
+          private-key: ${{ secrets.PROJECT_AUTOMATION_PRIVATE_KEY }}
+          permission-issues: read
+          permission-organization-projects: write
       - name: Add issue to general customer board
         if: ${{ env.BOARD_URL != 'null' && env.BOARD_URL != '' }}
         uses: actions/add-to-project@5afcf98fcd03f1c2f92c3c83f58ae24323cc57fd # v2.0.0
         with:
           project-url: ${{ env.BOARD_URL }}
-          github-token: ${{ secrets.ISSUE_AUTOMATION }}
+          github-token: ${{ steps.app-token.outputs.token || secrets.ISSUE_AUTOMATION }}
