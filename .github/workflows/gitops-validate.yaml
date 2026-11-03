@@ -27,7 +27,7 @@ on:
         description: "clusterctl release version to install."
       apptestctl_ver:
         type: string
-        default: "0.18.0"
+        default: "0.27.0"
         description: "apptestctl release version to install."
       kind_ver:
         type: string
