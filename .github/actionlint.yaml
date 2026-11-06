@@ -1,0 +1,7 @@
+# Configuration for actionlint, run by validate-workflows.yaml.
+self-hosted-runner:
+  # GitHub-hosted runner labels that the pinned actionlint release does not know yet.
+  # actionlint has no other knob for extra labels; this list is not about self-hosted
+  # runners. Drop an entry once an actionlint release accepts the label on its own.
+  labels:
+    - ubuntu-26.04
