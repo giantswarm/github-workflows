@@ -18,12 +18,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate YAML
+        env:
+          # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/yamllint
+          YAMLLINT_IMAGE: gsoci.azurecr.io/giantswarm/yamllint:1.37.1@sha256:cd17d327a11bcc662a4dc88d599fc3234d19ea13ff642a02087324da01d7bb68
         run: |
           set +e
 
           # Run yamllint and capture output
           docker run --rm -v "$PWD:/data" -w /data \
-            gsoci.azurecr.io/giantswarm/yamllint:1.37.1 \
+            "$YAMLLINT_IMAGE" \
             --format=parsable . > yamllint-output.txt 2>&1
 
           exit_code=$?
@@ -62,10 +65,14 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+    # Renovate keeps each version and its tarball checksum in step (see the FOO_VERSION
+    # manager in renovate.json5); a _SHA256 line must stay directly under its _VERSION line.
     env:
-      ACTIONLINT_VERSION: 1.7.12
+      # renovate: datasource=github-release-attachments depName=rhysd/actionlint
+      ACTIONLINT_VERSION: v1.7.12
       ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
-      SHELLCHECK_VERSION: 0.11.0
+      # renovate: datasource=github-release-attachments depName=koalaman/shellcheck
+      SHELLCHECK_VERSION: v0.11.0
       SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
     steps:
       - name: Checkout code
@@ -78,12 +85,12 @@ jobs:
           bin="${RUNNER_TEMP}/bin"
           mkdir -p "${bin}"
           cd "${RUNNER_TEMP}"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
-          echo "${ACTIONLINT_SHA256}  actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" | sha256sum -c -
-          tar -xzf "actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" -C "${bin}" actionlint
-          curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
-          echo "${SHELLCHECK_SHA256}  shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | sha256sum -c -
-          tar -xJf "shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" --strip-components=1 -C "${bin}" "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz" | sha256sum -c -
+          tar -xzf "actionlint_${ACTIONLINT_VERSION#v}_linux_amd64.tar.gz" -C "${bin}" actionlint
+          curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          echo "${SHELLCHECK_SHA256}  shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" | sha256sum -c -
+          tar -xJf "shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" --strip-components=1 -C "${bin}" "shellcheck-${SHELLCHECK_VERSION}/shellcheck"
           echo "${bin}" >> "$GITHUB_PATH"
 
       - name: Run actionlint

@@ -43,8 +43,35 @@
         '# renovate: datasource=(?<datasource>docker) depName=(?<depName>.*?)\\s+\\w+: .*?:(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)\\n',
       ],
     },
+    {
+      // Tool versions pinned as `FOO_VERSION:` env vars, optionally followed by a
+      // `FOO_SHA256:` line holding the release asset's checksum. With the
+      // github-release-attachments datasource Renovate rewrites both lines: it finds
+      // the asset behind the current checksum (via a checksums manifest, or by hashing
+      // the assets) and takes that asset's checksum from the new release. The pinned
+      // value must be the full release tag (`v1.7.12`), which semver-coerced accepts.
+      description: 'Allow updating FOO_VERSION env pins, with an optional FOO_SHA256 release-asset checksum',
+      customType: 'regex',
+      managerFilePatterns: [
+        '/.*\\.yaml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\n\\s+\\w+_VERSION: [\'"]?(?<currentValue>[^\'"\\s]+)[\'"]?\\n(?:\\s+\\w+_SHA256: (?<currentDigest>[a-f0-9]{64})\\n)?',
+      ],
+      versioningTemplate: '{{#if versioning}}{{{versioning}}}{{else}}semver-coerced{{/if}}',
+    },
   ],
   packageRules: [
+    {
+      // A checksum Renovate cannot map (renamed asset, bogus pin) is carried over
+      // unchanged, and only `sha256sum -c` in the actionlint job catches it. Renovate
+      // merges through GitHub auto-merge, which waits for required checks only, and
+      // `main` requires none: a red job does not stop the merge. These PRs wait for a
+      // person who looks at the checks.
+      description: 'Never automerge tools pinned by a release-asset checksum',
+      matchDatasources: ['github-release-attachments'],
+      automerge: false,
+    },
     {
       "matchDepNames": [
         "/^giantswarm/architect$/",
