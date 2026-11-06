@@ -63,6 +63,16 @@
   ],
   packageRules: [
     {
+      // A checksum Renovate cannot map (renamed asset, bogus pin) is carried over
+      // unchanged, and only `sha256sum -c` in the actionlint job catches it. Renovate
+      // merges through GitHub auto-merge, which waits for required checks only, and
+      // `main` requires none: a red job does not stop the merge. These PRs wait for a
+      // person who looks at the checks.
+      description: 'Never automerge tools pinned by a release-asset checksum',
+      matchDatasources: ['github-release-attachments'],
+      automerge: false,
+    },
+    {
       "matchDepNames": [
         "/^giantswarm/architect$/",
       ],
