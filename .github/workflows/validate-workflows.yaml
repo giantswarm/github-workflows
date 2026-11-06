@@ -18,12 +18,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate YAML
+        env:
+          # renovate: datasource=docker depName=gsoci.azurecr.io/giantswarm/yamllint
+          YAMLLINT_IMAGE: gsoci.azurecr.io/giantswarm/yamllint:1.37.1@sha256:cd17d327a11bcc662a4dc88d599fc3234d19ea13ff642a02087324da01d7bb68
         run: |
           set +e
 
           # Run yamllint and capture output
           docker run --rm -v "$PWD:/data" -w /data \
-            gsoci.azurecr.io/giantswarm/yamllint:1.37.1 \
+            "$YAMLLINT_IMAGE" \
             --format=parsable . > yamllint-output.txt 2>&1
 
           exit_code=$?
