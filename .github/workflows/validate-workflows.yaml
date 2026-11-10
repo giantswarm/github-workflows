@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/*.yaml'
+      - '.github/actionlint.yaml'
   workflow_dispatch: {}
 
 permissions: {}
