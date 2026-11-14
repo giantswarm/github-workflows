@@ -99,7 +99,7 @@ jobs:
           git checkout -b "${branch}"
 
       - name: Run nancy-fixer fix
-        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.12.1
+        uses: docker://gsoci.azurecr.io/giantswarm/nancy-fixer:0.12.2
         timeout-minutes: 20
         env:
           OSSI_USERNAME: ${{ secrets.NANCY_USER }}
