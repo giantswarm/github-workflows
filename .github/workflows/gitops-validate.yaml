@@ -15,11 +15,11 @@ on:
     inputs:
       kubeconform_ver:
         type: string
-        default: "0.4.13"
+        default: "0.8.0"
         description: "kubeconform release version to install."
       dyff_ver:
         type: string
-        default: "1.7.1"
+        default: "1.12.0"
         description: "dyff release version to install."
       clusterctl_ver:
         type: string
