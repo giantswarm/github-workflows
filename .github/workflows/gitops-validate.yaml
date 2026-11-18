@@ -15,15 +15,15 @@ on:
     inputs:
       kubeconform_ver:
         type: string
-        default: "0.4.13"
+        default: "0.8.0"
         description: "kubeconform release version to install."
       dyff_ver:
         type: string
-        default: "1.7.1"
+        default: "1.12.0"
         description: "dyff release version to install."
       clusterctl_ver:
         type: string
-        default: "1.2.0"
+        default: "1.14.4"
         description: "clusterctl release version to install."
       apptestctl_ver:
         type: string
@@ -31,11 +31,11 @@ on:
         description: "apptestctl release version to install."
       kind_ver:
         type: string
-        default: "0.12.0"
+        default: "0.33.0"
         description: "kind release version for the e2e cluster."
       gitops_flux_app_version:
         type: string
-        default: "1.10.0"
+        default: "1.12.2"
         description: "Flux app version used by the e2e tests."
       gitops_init_namespaces:
         type: string
