@@ -155,6 +155,7 @@ jobs:
         with:
           client-id: ${{ secrets.HERALD_CLIENT_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
+          permission-contents: write
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -569,6 +570,7 @@ jobs:
         with:
           client-id: ${{ secrets.HERALD_CLIENT_ID }}
           private-key: ${{ secrets.HERALD_APP_KEY }}
+          permission-pull-requests: write
       - name: Update PR description
         env:
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}

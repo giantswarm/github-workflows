@@ -69,6 +69,9 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Run release-please
         id: release_please
@@ -97,6 +100,7 @@ jobs:
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APPROVER_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APPROVER_PRIVATE_KEY }}
+          permission-pull-requests: write
 
       - name: Auto-approve Release Please PR
         if: ${{ steps.approver_token.outputs.token != '' }}
