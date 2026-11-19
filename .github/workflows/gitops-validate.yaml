@@ -9,21 +9,27 @@ name: GitOps Validate
 # `tools/test-all-ff` and `tests/ats` resolve against the consumer with no
 # extra wiring. Consumers pass the GITOPS_MASTER_GPG_KEY secret and may
 # override the tool-version / gitops-* inputs (defaults match gitops-template).
+#
+# Pull requests from forks: GitHub hands them no secrets and a read-only token.
+# GITOPS_MASTER_GPG_KEY is therefore optional, and the caller's tests decide
+# what an empty key means (gitops-template skips its kind tests on a fork pull
+# request and fails anywhere else). The validation and diff output goes to the
+# job summary instead of a PR comment, which the token cannot post.
 
 on:
   workflow_call:
     inputs:
       kubeconform_ver:
         type: string
-        default: "0.4.13"
+        default: "0.8.0"
         description: "kubeconform release version to install."
       dyff_ver:
         type: string
-        default: "1.7.1"
+        default: "1.12.0"
         description: "dyff release version to install."
       clusterctl_ver:
         type: string
-        default: "1.2.0"
+        default: "1.14.4"
         description: "clusterctl release version to install."
       apptestctl_ver:
         type: string
@@ -31,11 +37,11 @@ on:
         description: "apptestctl release version to install."
       kind_ver:
         type: string
-        default: "0.12.0"
+        default: "0.33.0"
         description: "kind release version for the e2e cluster."
       gitops_flux_app_version:
         type: string
-        default: "1.10.0"
+        default: "1.12.2"
         description: "Flux app version used by the e2e tests."
       gitops_init_namespaces:
         type: string
@@ -51,7 +57,10 @@ on:
         description: "Python version for the e2e test suite."
     secrets:
       GITOPS_MASTER_GPG_KEY:
-        required: true
+        # Optional so a pull request from a fork, which gets an empty value,
+        # can call this workflow at all. The caller's tests fail on an empty
+        # key wherever it should have been set.
+        required: false
         description: "Master GPG key used by the e2e tests to decrypt SOPS-encrypted fixtures."
 
 permissions: {}
@@ -84,6 +93,9 @@ jobs:
       GITOPS_FLUX_APP_VERSION: ${{ inputs.gitops_flux_app_version }}
       GITOPS_INIT_NAMESPACES: ${{ inputs.gitops_init_namespaces }}
       GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
+      # A pull request from a fork, or from one that has since been deleted
+      # (head.repo is then null). Its token is read-only, so it cannot comment.
+      FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
       - run: sudo apt-get install -y yamllint
       - run: curl -s https://fluxcd.io/install.sh | sudo bash
@@ -111,7 +123,7 @@ jobs:
         uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
         # Always look up the previous validation comment, whether validation passed or not.
         # See: https://docs.github.com/en/actions/learn-github-actions/expressions#always
-        if: always() && github.ref_name != 'main'
+        if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
         continue-on-error: true
         id: fc
         with:
@@ -120,15 +132,28 @@ jobs:
           body-includes: Validation output log
       - name: Delete old comment
         uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
-        if: always() && github.ref_name != 'main'
+        if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
         continue-on-error: true
         with:
           type: delete
           comment_id: ${{ steps.fc.outputs.comment-id }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write validation log to the job summary
+        if: always() && env.FORK_PULL_REQUEST == 'true'
+        env:
+          VALIDATION_LOG: ${{ steps.validate.outputs.stdout }}
+        run: |
+          echo "::notice title=No PR comment::Pull request from a fork: its token cannot comment, so the validation log is in the job summary."
+          {
+            echo "### Validation output log"
+            echo
+            echo '```'
+            printf '%s\n' "${VALIDATION_LOG}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
       - name: Create or update validation comment
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
-        if: always() && github.ref_name != 'main'
+        if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
@@ -154,6 +179,8 @@ jobs:
       GITOPS_FLUX_APP_VERSION: ${{ inputs.gitops_flux_app_version }}
       GITOPS_INIT_NAMESPACES: ${{ inputs.gitops_init_namespaces }}
       GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
+      # See the validate job.
+      FORK_PULL_REQUEST: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
     steps:
       - run: sudo apt-get install -y yamllint
       - run: curl -s https://fluxcd.io/install.sh | sudo bash
@@ -194,6 +221,7 @@ jobs:
           run: 'dyff between -s -i -b -g /tmp/old.yaml /tmp/new.yaml && echo "No diff detected" || if [[ $? -eq 255 ]]; then echo "Diff error"; fi;'
       - name: Find diff comment
         uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
+        if: env.FORK_PULL_REQUEST != 'true'
         continue-on-error: true
         id: fc
         with:
@@ -202,13 +230,28 @@ jobs:
           body-includes: Rendered manifest diff output log
       - name: Delete old comment
         uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
+        if: env.FORK_PULL_REQUEST != 'true'
         continue-on-error: true
         with:
           type: delete
           comment_id: ${{ steps.fc.outputs.comment-id }}
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write diff to the job summary
+        if: env.FORK_PULL_REQUEST == 'true'
+        env:
+          DIFF_LOG: ${{ steps.diff.outputs.stdout }}
+        run: |
+          echo "::notice title=No PR comment::Pull request from a fork: its token cannot comment, so the rendered manifest diff is in the job summary."
+          {
+            echo "### Rendered manifest diff output log"
+            echo
+            echo '```'
+            printf '%s\n' "${DIFF_LOG}"
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
       - name: Create or update diff comment
         uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
+        if: env.FORK_PULL_REQUEST != 'true'
         with:
           issue-number: ${{ github.event.pull_request.number }}
           body: |
