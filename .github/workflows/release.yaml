@@ -65,7 +65,7 @@ jobs:
     steps:
       - name: Generate GitHub App token
         id: generate_token
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_PRIVATE_KEY }}
@@ -96,7 +96,7 @@ jobs:
         if: ${{ steps.release_please.outputs.pr != '' && inputs.auto-merge-level != 'none' && env.APPROVER_CLIENT_ID != '' }}
         env:
           APPROVER_CLIENT_ID: ${{ secrets.RELEASE_PLEASE_APPROVER_CLIENT_ID }}
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.RELEASE_PLEASE_APPROVER_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_PLEASE_APPROVER_PRIVATE_KEY }}
