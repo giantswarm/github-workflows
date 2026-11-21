@@ -281,7 +281,7 @@ jobs:
     # this job whenever prepare_release_pr is skipped, so do not use success() here.
     if: ${{ !cancelled() && !failure() && needs.gather_facts.result == 'success' && needs.gather_facts.outputs.skip != 'true' }}
     steps:
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: '=1.27.4'
       - name: Install architect
