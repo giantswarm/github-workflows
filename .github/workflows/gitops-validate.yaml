@@ -2,10 +2,10 @@ name: GitOps Validate
 
 # Reusable workflow for validating a GitOps repository created from
 # giantswarm/gitops-template. It runs the repo's pre-commit hooks, its
-# `./tools/test-all-ff validate`, posts a dyff of the rendered manifests
-# against the pull request's base branch, and runs the `tests/ats` kind-based
-# e2e suite. A diff too long for one PR comment is split across several, each
-# headed "Rendered manifest diff output log (part N of M)".
+# `./tools/test-all-ff validate` and posts its log, posts a dyff of the
+# rendered manifests against the pull request's base branch, and runs the
+# `tests/ats` kind-based e2e suite. A log or diff too long for one PR comment is
+# split across several, each headed e.g. "Validation output log (part N of M)".
 #
 # A called (workflow_call) workflow checks out the *caller* repository, so
 # `tools/test-all-ff` and `tests/ats` resolve against the consumer with no
@@ -16,9 +16,10 @@ name: GitOps Validate
 # GITOPS_MASTER_GPG_KEY is therefore optional, and the caller's tests decide
 # what an empty key means (gitops-template skips its kind tests on a fork pull
 # request and fails anywhere else). The validation and diff output goes to the
-# job summary instead of a PR comment, which the token cannot post. A diff
+# job summary instead of a PR comment, which the token cannot post. Output
 # bigger than a job summary holds is uploaded whole as the
-# `rendered-manifest-diff` artifact, and the summary shows its start.
+# `validation-output-log` or `rendered-manifest-diff` artifact, and the summary
+# shows its start.
 
 on:
   workflow_call:
@@ -100,6 +101,10 @@ jobs:
       # A pull request from a fork, or from one that has since been deleted
       # (head.repo is then null). Its token is read-only, so it cannot comment.
       FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      # The validation output. It is only ever read from this file: passed to
+      # an action as an input or an environment variable, a log over 128 KiB
+      # (Linux's MAX_ARG_STRLEN) stops the action's process from starting.
+      LOG_FILE: /tmp/validation-output-log.txt
     steps:
       - run: sudo apt-get install -y yamllint
       - run: curl -s https://fluxcd.io/install.sh | sudo bash
@@ -119,58 +124,116 @@ jobs:
         with:
           persist-credentials: false
       - name: run validation
-        uses: mathiasvr/command-output@34408ea3d0528273faff3d9e201761ae96106cd0 # v2.0.0
-        id: validate
-        with:
-          run: "./tools/test-all-ff validate"
-      - name: Find validation comment
-        uses: peter-evans/find-comment@b30e6a3c0ed37e7c023ccd3f1db5c6c0b0c23aad # v4.0.0
-        # Always look up the previous validation comment, whether validation passed or not.
+        # Fails the job when validation fails; the steps below still run.
+        run: |
+          set -o pipefail
+          ./tools/test-all-ff validate | tee "${LOG_FILE}"
+      - name: Replace the validation comments
+        # Always replace the previous validation comments, whether validation passed or not.
         # See: https://docs.github.com/en/actions/learn-github-actions/expressions#always
         if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
-        continue-on-error: true
-        id: fc
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: "github-actions[bot]"
-          body-includes: Validation output log
-      - name: Delete old comment
-        uses: winterjung/comment@fda92dbcb5e7e79cccd55ecb107a8a3d7802a469 # v1.1.0
-        if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
-        continue-on-error: true
-        with:
-          type: delete
-          comment_id: ${{ steps.fc.outputs.comment-id }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MARKER: Validation output log
+        # Shared with the get-diff job through this YAML anchor.
+        run: &replace-comments |
+          comments="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
+          work=$(mktemp -d)
+          # An earlier step that failed may have left no output.
+          touch "${LOG_FILE}"
+
+          # Delete every part of the previous comment. A comment that cannot be
+          # listed or deleted does not stop the new one.
+          if ! gh api --paginate "${comments}" \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"${MARKER}\"))) | .id" \
+            > "${work}/old-comments"; then
+            echo "::warning title=Old comments kept::Could not list the pull request's comments, so the previous ${MARKER} comments stay."
+            : > "${work}/old-comments"
+          fi
+          while read -r id; do
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" ||
+              echo "::warning title=Old comment kept::Could not delete comment ${id}."
+          done < "${work}/old-comments"
+
+          # A comment holds at most 65,536 characters. Split the log at line
+          # boundaries into parts of at most 60,000 bytes, which leaves room for
+          # the wrapper below. Only a single line longer than that is cut.
+          mkdir "${work}/parts"
+          split --line-bytes=60000 --numeric-suffixes=1 --suffix-length=4 "${LOG_FILE}" "${work}/parts/"
+          mapfile -t parts < <(find "${work}/parts" -type f | sort)
+          if [ "${#parts[@]}" -eq 0 ]; then
+            : > "${work}/parts/0001"
+            parts=("${work}/parts/0001")
+          fi
+
+          total=${#parts[@]}
+          i=0
+          for part in "${parts[@]}"; do
+            i=$((i + 1))
+            summary="${MARKER}"
+            if [ "${total}" -gt 1 ]; then
+              summary="${MARKER} (part ${i} of ${total})"
+            fi
+            {
+              echo "<details>"
+              echo "<summary> ${summary} </summary>"
+              echo "<!-- mandatory empty line -->"
+              echo
+              echo '```'
+              cat "${part}"
+              # The closing fence needs its own line.
+              if [ -n "$(tail -c 1 "${part}")" ]; then echo; fi
+              echo '```'
+              echo
+              echo "</details>"
+              echo "<!-- mandatory empty line -->"
+            } > "${work}/body.md"
+            # The body goes to the API from the file, as JSON on stdin.
+            jq --raw-input --slurp '{body: .}' "${work}/body.md" |
+              gh api --method POST "${comments}" --input - --silent
+          done
       - name: Write validation log to the job summary
+        id: summary
         if: always() && env.FORK_PULL_REQUEST == 'true'
         env:
-          VALIDATION_LOG: ${{ steps.validate.outputs.stdout }}
-        run: |
-          echo "::notice title=No PR comment::Pull request from a fork: its token cannot comment, so the validation log is in the job summary."
+          MARKER: Validation output log
+          ARTIFACT: validation-output-log
+        # Shared with the get-diff job through this YAML anchor.
+        run: &write-summary |
+          touch "${LOG_FILE}"
+          echo "::notice title=No PR comment::Pull request from a fork: its token cannot comment, so the ${MARKER,,} is in the job summary."
+          size=$(stat -c %s "${LOG_FILE}")
+          shown="${LOG_FILE}"
+          # A step's job summary holds at most 1 MiB. Past 1,000,000 bytes, show
+          # the start, cut at a line boundary, and upload the whole log.
+          if [ "${size}" -gt 1000000 ]; then
+            echo "too_big=true" >> "${GITHUB_OUTPUT}"
+            work=$(mktemp -d)
+            split --line-bytes=1000000 --numeric-suffixes=1 --suffix-length=4 "${LOG_FILE}" "${work}/"
+            shown="${work}/0001"
+          fi
           {
-            echo "### Validation output log"
+            echo "### ${MARKER}"
             echo
+            if [ "${size}" -gt 1000000 ]; then
+              echo "The ${MARKER,,} is ${size} bytes, more than a job summary holds, so only its start is shown here. All of it is in this run's \`${ARTIFACT}\` artifact."
+              echo
+            fi
             echo '```'
-            printf '%s\n' "${VALIDATION_LOG}"
+            cat "${shown}"
+            if [ -n "$(tail -c 1 "${shown}")" ]; then echo; fi
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Create or update validation comment
-        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5.0.0
-        if: always() && github.ref_name != 'main' && env.FORK_PULL_REQUEST != 'true'
+      - name: Upload the validation log as an artifact
+        # Only when a fork pull request's log is too big for its job summary.
+        if: always() && steps.summary.outputs.too_big == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            <details>
-            <summary> Validation output log </summary>
-            <!-- mandatory empty line -->
-
-            ```
-            ${{ steps.validate.outputs.stdout }}
-            ```
-
-            </details>
-            <!-- mandatory empty line -->
+          name: validation-output-log
+          path: ${{ env.LOG_FILE }}
+          if-no-files-found: error
+          overwrite: true
 
   get-diff:
     needs: validate
@@ -185,10 +248,8 @@ jobs:
       GITOPS_IGNORED_OBJECTS: ${{ inputs.gitops_ignored_objects }}
       # See the validate job.
       FORK_PULL_REQUEST: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
-      # The dyff output. It is only ever read from this file: passed to an
-      # action as an input or an environment variable, a diff over 128 KiB
-      # (Linux's MAX_ARG_STRLEN) stops the action's process from starting.
-      DIFF_FILE: /tmp/rendered-manifest-diff.txt
+      # The dyff output, only ever read from this file. See the validate job.
+      LOG_FILE: /tmp/rendered-manifest-diff.txt
     steps:
       - run: sudo apt-get install -y yamllint
       - run: curl -s https://fluxcd.io/install.sh | sudo bash
@@ -226,116 +287,40 @@ jobs:
       - name: template all for the old branch
         run: cd old/ && ../tools/test-all-ff template > /tmp/old.yaml && cd ..
       - name: save the diff
-        id: diff
         # dyff -s exits 0 for no differences, 1 for differences and 255 on an
         # error. None of them fails the step: the comment says which it was.
         run: |
           rc=0
-          dyff between -s -i -b -g /tmp/old.yaml /tmp/new.yaml > "${DIFF_FILE}" || rc=$?
+          dyff between -s -i -b -g /tmp/old.yaml /tmp/new.yaml > "${LOG_FILE}" || rc=$?
           case "${rc}" in
-            0) echo "No diff detected" >> "${DIFF_FILE}" ;;
+            0) echo "No diff detected" >> "${LOG_FILE}" ;;
             1) ;;
-            *) echo "Diff error" >> "${DIFF_FILE}" ;;
+            *) echo "Diff error" >> "${LOG_FILE}" ;;
           esac
-          cat "${DIFF_FILE}"
-          # A step's job summary holds at most 1 MiB; leave room for the heading.
-          if [ "$(stat -c %s "${DIFF_FILE}")" -gt 1000000 ]; then
-            echo "too_big_for_summary=true" >> "${GITHUB_OUTPUT}"
-          fi
+          cat "${LOG_FILE}"
       - name: Replace the diff comments
         if: env.FORK_PULL_REQUEST != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          marker="Rendered manifest diff output log"
-          comments="repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments"
-          work=$(mktemp -d)
-
-          # Delete every part of the previous diff comment. As before, a comment
-          # that cannot be found or deleted does not stop the new one.
-          if ! gh api --paginate "${comments}" \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"${marker}\"))) | .id" \
-            > "${work}/old-comments"; then
-            echo "::warning title=Old diff comments kept::Could not list the pull request's comments."
-            : > "${work}/old-comments"
-          fi
-          while read -r id; do
-            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" ||
-              echo "::warning title=Old diff comment kept::Could not delete comment ${id}."
-          done < "${work}/old-comments"
-
-          # A comment holds at most 65,536 characters. Split the diff at line
-          # boundaries into parts of at most 60,000 bytes, which leaves room for
-          # the wrapper below. Only a single line longer than that is cut.
-          mkdir "${work}/parts"
-          split --line-bytes=60000 --numeric-suffixes=1 --suffix-length=4 "${DIFF_FILE}" "${work}/parts/"
-          mapfile -t parts < <(find "${work}/parts" -type f | sort)
-          if [ "${#parts[@]}" -eq 0 ]; then
-            : > "${work}/parts/0001"
-            parts=("${work}/parts/0001")
-          fi
-
-          total=${#parts[@]}
-          i=0
-          for part in "${parts[@]}"; do
-            i=$((i + 1))
-            summary="${marker}"
-            if [ "${total}" -gt 1 ]; then
-              summary="${marker} (part ${i} of ${total})"
-            fi
-            {
-              echo "<details>"
-              echo "<summary> ${summary} </summary>"
-              echo "<!-- mandatory empty line -->"
-              echo
-              echo '```'
-              cat "${part}"
-              # The closing fence needs its own line.
-              if [ -n "$(tail -c 1 "${part}")" ]; then echo; fi
-              echo '```'
-              echo
-              echo "</details>"
-              echo "<!-- mandatory empty line -->"
-            } > "${work}/body.md"
-            # The body goes to the API from the file, as JSON on stdin.
-            jq --raw-input --slurp '{body: .}' "${work}/body.md" |
-              gh api --method POST "${comments}" --input - --silent
-          done
+          MARKER: Rendered manifest diff output log
+        run: *replace-comments
+      - name: Write diff to the job summary
+        id: summary
+        if: env.FORK_PULL_REQUEST == 'true'
+        env:
+          MARKER: Rendered manifest diff output log
+          ARTIFACT: rendered-manifest-diff
+        run: *write-summary
       - name: Upload the diff as an artifact
         # Only when a fork pull request's diff is too big for its job summary.
-        if: env.FORK_PULL_REQUEST == 'true' && steps.diff.outputs.too_big_for_summary == 'true'
+        if: steps.summary.outputs.too_big == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rendered-manifest-diff
-          path: ${{ env.DIFF_FILE }}
+          path: ${{ env.LOG_FILE }}
           if-no-files-found: error
           overwrite: true
-      - name: Write diff to the job summary
-        if: env.FORK_PULL_REQUEST == 'true'
-        env:
-          TOO_BIG_FOR_SUMMARY: ${{ steps.diff.outputs.too_big_for_summary }}
-        run: |
-          echo "::notice title=No PR comment::Pull request from a fork: its token cannot comment, so the rendered manifest diff is in the job summary."
-          shown="${DIFF_FILE}"
-          if [ "${TOO_BIG_FOR_SUMMARY}" = "true" ]; then
-            # The first 1,000,000 bytes, cut at a line boundary.
-            work=$(mktemp -d)
-            split --line-bytes=1000000 --numeric-suffixes=1 --suffix-length=4 "${DIFF_FILE}" "${work}/"
-            shown="${work}/0001"
-          fi
-          {
-            echo "### Rendered manifest diff output log"
-            echo
-            if [ "${TOO_BIG_FOR_SUMMARY}" = "true" ]; then
-              echo "The diff is $(stat -c %s "${DIFF_FILE}") bytes, more than a job summary holds, so only its start is shown here. The full diff is in this run's \`rendered-manifest-diff\` artifact."
-              echo
-            fi
-            echo '```'
-            cat "${shown}"
-            if [ -n "$(tail -c 1 "${shown}")" ]; then echo; fi
-            echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
 
   test_on_kind:
     needs: validate
