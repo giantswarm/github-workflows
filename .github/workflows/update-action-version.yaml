@@ -4,6 +4,22 @@
 # It finds the open release PR (matching "chore(release): v<semver>" or the
 # legacy "Release v<semver>"), extracts the version, and updates the
 # specified action.yml file on the release branch.
+#
+# Only PRs from a branch of this repository whose name follows the release
+# branch pattern (`release#...` or `<base>#release#...`, the branches
+# "Create Release PR" runs on) count. A fork PR's title and head branch name
+# are chosen by its author, so a fork PR is never picked.
+#
+# Callers trigger it with `workflow_run` on "Create Release PR", completed. The
+# PR has to come from the branch that run was for, so a `workflow_run` of any
+# other workflow finds no release PR. The job only runs for a successful,
+# push-triggered run in the caller's own repository; callers should put the
+# same condition on their job so it doesn't start at all:
+#
+#   if: >-
+#     github.event.workflow_run.conclusion == 'success' &&
+#     github.event.workflow_run.event == 'push' &&
+#     github.event.workflow_run.head_repository.full_name == github.repository
 
 name: Update action version
 
@@ -26,6 +42,12 @@ jobs:
   get_version:
     name: Get version from PR title
     runs-on: ubuntu-26.04
+    if: >-
+      github.event_name != 'workflow_run' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     permissions:
       pull-requests: read
     outputs:
@@ -37,13 +59,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          # Set when the caller runs on workflow_run: the branch the
+          # "Create Release PR" run was for.
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
         run: |
           # List open PRs
-          prs=$(gh pr list --repo "${REPOSITORY}" --state open --json title,number,headRefName)
+          prs=$(gh pr list --repo "${REPOSITORY}" --state open --limit 1000 --json title,number,headRefName,isCrossRepository)
 
           # Filter for release PRs matching "chore(release): v<semver>"
-          # (current format) or "Release v<semver>" (legacy format).
-          release_prs=$(echo "$prs" | jq '[.[] | select(.title | test("^(chore\\(release\\):|Release) v[0-9]+\\.[0-9]+\\.[0-9]+"; "i"))]')
+          # (current format) or "Release v<semver>" (legacy format), opened from
+          # a release branch of this repository (and, on workflow_run, from the
+          # branch that run was for). Fork PRs are skipped: their author picks
+          # both the title and the head branch name.
+          release_prs=$(echo "$prs" | jq --arg run_branch "${RUN_HEAD_BRANCH}" '[.[]
+            | select(.isCrossRepository == false)
+            | select($run_branch == "" or .headRefName == $run_branch)
+            | select(.headRefName | test("^([^#]+#)?release#"))
+            | select(.title | test("^(chore\\(release\\):|Release) v[0-9]+\\.[0-9]+\\.[0-9]+"; "i"))]')
 
           count=$(echo "$release_prs" | jq 'length')
           if [ "$count" -ne 1 ]; then
@@ -53,7 +85,15 @@ jobs:
 
           title=$(echo "$release_prs" | jq -r '.[0].title')
           branch=$(echo "$release_prs" | jq -r '.[0].headRefName')
-          version=$(echo "$title" | sed -E 's/^(chore\(release\):|Release) v//')
+          version=$(echo "$title" | sed -E 's/^(chore\(release\):|Release) v//I')
+
+          # The version is written into action.yml as-is, so it has to be a
+          # plain semver (with optional pre-release and build metadata) and
+          # nothing more.
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release PR title \"${title}\" does not end in a valid version."
+            exit 1
+          fi
 
           echo "Found release PR: $title"
           echo "Version: $version"
@@ -67,6 +107,12 @@ jobs:
     runs-on: ubuntu-26.04
     needs: get_version
     if: needs.get_version.outputs.version
+    # "Create Release PR" runs more than once per release branch. Let the runs
+    # take turns, so a later one checks out the bumped branch and finds
+    # nothing to commit instead of racing the first push.
+    concurrency:
+      group: update-action-version-${{ needs.get_version.outputs.branch }}-${{ inputs.action_yml_path }}
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -90,10 +136,18 @@ jobs:
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
       - name: Create release commit
+        id: commit
         run: |
           git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::action.yml already has this version. Nothing to push."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit -m "Update version in action.yml"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
       - name: Push changes
+        if: steps.commit.outputs.changed == 'true'
         env:
           remote_repo: "https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           branch_name: ${{ needs.get_version.outputs.branch }}
